@@ -1,0 +1,35 @@
+# IDE and Tooling
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.DS_Store
+*.swp
+*~
+
+# Gradle
+.gradle/
+build/
+/*/build/
+captures/
+.externalNativeBuild
+.cxx
+local.properties
+.stacktrace
+
+# Android
+*.keystore
+!debug.keystore
+*.jks
+*.hprof
+google-services.json
+secrets.properties
+
+# Project Specific & Claude
+CLAUDE.md
+/reference/
+
+# Kotlin
+/bin/
+/gen/
