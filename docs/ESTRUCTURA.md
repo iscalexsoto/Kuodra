@@ -32,9 +32,11 @@ cableadas en [`navigation/KuodraNavHost.kt`](../app/src/main/java/com/arenacun/k
 - En `AddMovement`: **calculadora** (`Dialog`), **calendario** (`Dialog`), sheets de **categoría**,
   **pagador** y **dividir** (`ModalBottomSheet`).
 - En `Dashboard` (estado `DashboardOverlay`, hoja activa en el enum `DashboardSheet`):
-  **selector de espacios** "Tus espacios" (al tocar el título), **crear espacio** y **menú de acciones**
-  del espacio (botón ···: ajustes, reponer, historial, tema, salir), más el **flujo salir/archivar
-  grupo** (overlay inline de 3 pasos `LeaveStep`, patrón `confirmDelete`).
+  **selector de espacios** "Tus espacios" (al tocar el título), **crear espacio** y **menú "Opciones"**
+  del espacio (botón ···, filas según caso de uso: compartir resumen/corte, ajustes, cerrar periodo,
+  historial, reponer, salir), más sus sheets disparados (`Share`/`Shared`, `PCloseConfirm`/`PClosed`) y
+  el **flujo salir/archivar grupo** (overlay inline de 3 pasos `LeaveStep`, patrón `confirmDelete`). El
+  toggle de tema oscuro vive en `Settings` (no en el menú).
 - En `AllMovements`: **overlay de búsqueda** (pantalla completa) y **sheet de filtros**.
 - En `Settings`: calculadora de monto (presupuesto/fondo) y sheet de **agregar/editar contacto**.
 - En `HistoryDetail`: flujo **reenviar corte** (`reshare` → `shared`).
@@ -60,7 +62,7 @@ com.arenacun.kuodra
       Calc.kt                  # MOTOR PURO de la calculadora (CalcState, CalcKey, evaluate, formatAmount)
       CalendarMonth.kt         # LÓGICA PURA del calendario (rejilla, navegación acotada a hoy)
       DateLabels.kt            # formateo puro de fechas ("Hoy · 20 jun", "Martes · 18 jun")
-      SpaceSettings.kt         # BudgetConfig/FundConfig/BudgetFrequency + SpaceSettings
+      SpaceSettings.kt         # BudgetConfig (día por frecuencia)/FundConfig/BudgetFrequency + SpaceSettings
       SettlementRecord.kt      # registro de corte/liquidación + SettlementLine
     usecase/
       MovementQuery.kt         # filter() + groupByDay() puros (búsqueda/filtros/agrupación)
@@ -72,6 +74,7 @@ com.arenacun.kuodra
     repository/                 # *RepositoryImpl (incl. SettingsRepositoryImpl)
   presentation/
     KuodraRoot.kt, navigation/ (Destinations, KuodraNavHost)
+    crash/      CrashHandler (uncaught exceptions) + CrashActivity (pantalla de crash)
     app/        AppViewModel
     theme/      Theme(Kuodra accessor), Color(KuodraColors), Type, Shape
     component/

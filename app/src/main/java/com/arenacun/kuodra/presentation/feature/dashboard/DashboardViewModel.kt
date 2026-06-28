@@ -4,13 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.repository.MovementRepository
-import com.arenacun.kuodra.domain.repository.PreferencesRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -21,7 +20,6 @@ class DashboardViewModel(
     private val spaceRepository: SpaceRepository,
     movementRepository: MovementRepository,
     summaryRepository: SummaryRepository,
-    private val preferences: PreferencesRepository,
 ) : ViewModel() {
 
     val uiState = spaceRepository.activeSpace
@@ -39,16 +37,21 @@ class DashboardViewModel(
 
     private val menu = MutableStateFlow(DashboardOverlay())
 
-    val overlay = combine(menu, preferences.darkTheme) { m, dark -> m.copy(darkTheme = dark) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardOverlay())
-
-    fun onToggleTheme() = preferences.toggleTheme()
+    val overlay = menu.asStateFlow()
 
     // ---- Hojas inferiores (espacios / crear / menú) ----
     fun onOpenSpaces() = menu.update { it.copy(sheet = DashboardSheet.Spaces) }
     fun onOpenCreateSpace() = menu.update { it.copy(sheet = DashboardSheet.CreateSpace) }
     fun onOpenMenu() = menu.update { it.copy(sheet = DashboardSheet.Menu) }
     fun onCloseSheet() = menu.update { it.copy(sheet = DashboardSheet.None) }
+
+    // ---- Compartir resumen/corte (Gastos/Caja) ----
+    fun onShare() = menu.update { it.copy(sheet = DashboardSheet.Share) }
+    fun onShareConfirm() = menu.update { it.copy(sheet = DashboardSheet.Shared) }
+
+    // ---- Cerrar periodo (Personal) ----
+    fun onClosePeriod() = menu.update { it.copy(sheet = DashboardSheet.PCloseConfirm) }
+    fun onClosePeriodConfirm() = menu.update { it.copy(sheet = DashboardSheet.PClosed) }
 
     /** Cambia al espacio (caso de uso) elegido y cierra el selector. */
     fun onSelectUseCase(useCase: UseCase) {

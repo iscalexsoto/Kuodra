@@ -101,7 +101,13 @@ class KuodraSeedSource {
         UseCase.Personal -> SpaceSettings(
             name = "Mis gastos",
             members = emptyList(),
-            budget = BudgetConfig(enabled = true, frequency = BudgetFrequency.Biweekly, closingDay = 1, amount = "$6,000"),
+            budget = BudgetConfig(
+                enabled = true,
+                frequency = BudgetFrequency.Biweekly,
+                amount = "$6,000",
+                firstDay = 1,
+                secondDay = 16,
+            ),
             fund = null,
             reminderEnabled = true,
         )

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -184,13 +185,26 @@ fun DashboardScreen(
             SpaceMenu(
                 c = c,
                 current = uc,
-                darkTheme = overlay.darkTheme,
+                onClose = viewModel::onCloseSheet,
+                onShare = viewModel::onShare,
                 onOpenSettings = { viewModel.onCloseSheet(); onOpenSettings() },
+                onClosePeriod = viewModel::onClosePeriod,
                 onReplenish = { viewModel.onCloseSheet(); onReplenish() },
                 onOpenHistory = { viewModel.onCloseSheet(); onOpenHistory() },
-                onToggleTheme = viewModel::onToggleTheme,
                 onLeave = viewModel::onLeaveStart,
             )
+        }
+        DashboardSheet.Share -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
+            ShareSheet(c, uc, onClose = viewModel::onCloseSheet, onShare = viewModel::onShareConfirm)
+        }
+        DashboardSheet.Shared -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
+            ShareDoneSheet(c, uc, onClose = viewModel::onCloseSheet)
+        }
+        DashboardSheet.PCloseConfirm -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
+            ClosePeriodSheet(c, onClose = viewModel::onCloseSheet, onConfirm = viewModel::onClosePeriodConfirm)
+        }
+        DashboardSheet.PClosed -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
+            ClosePeriodDoneSheet(c, onClose = viewModel::onCloseSheet)
         }
         DashboardSheet.None -> {}
     }
@@ -343,58 +357,317 @@ private fun CloseIcon(size: Dp, color: Color) {
     }
 }
 
+/**
+ * Menú "Opciones" (botón ···). Réplica del sheet `sheetMenu` del prototipo: encabezado
+ * "Opciones" + filas con icono/subtítulo cuya visibilidad depende del caso de uso.
+ * El tema oscuro se gestiona desde Ajustes (no aquí).
+ */
 @Composable
 private fun SpaceMenu(
     c: KuodraColors,
     current: UseCase,
-    darkTheme: Boolean,
+    onClose: () -> Unit,
+    onShare: () -> Unit,
     onOpenSettings: () -> Unit,
+    onClosePeriod: () -> Unit,
     onReplenish: () -> Unit,
     onOpenHistory: () -> Unit,
-    onToggleTheme: () -> Unit,
     onLeave: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
-        MenuAction(c, "Ajustes del espacio", onOpenSettings)
-        if (current == UseCase.Caja) MenuAction(c, "Reponer fondo", onReplenish)
-        MenuAction(c, "Historial de cortes", onOpenHistory)
-
-        Row(
-            Modifier.fillMaxWidth().padding(top = 6.dp).clip(Kuodra.shape.lg)
-                .clickable(onClick = onToggleTheme).padding(horizontal = 4.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+        SheetHeader(c, "Opciones", onClose)
+        Column(
+            Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Tema oscuro", style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
-            Box(
-                Modifier.width(46.dp).height(28.dp).clip(Kuodra.shape.pill)
-                    .background(if (darkTheme) c.primary else c.surface2)
-                    .border(1.dp, if (darkTheme) c.primary else c.line, Kuodra.shape.pill),
-                contentAlignment = if (darkTheme) Alignment.CenterEnd else Alignment.CenterStart,
-            ) {
-                Box(Modifier.padding(horizontal = 3.dp).size(22.dp).clip(Kuodra.shape.pill)
-                    .background(if (darkTheme) c.primaryInk else c.surface))
+            // 1 · Compartir resumen/corte (grupo y caja)
+            if (current != UseCase.Personal) {
+                MenuOptionRow(
+                    c = c,
+                    iconBg = c.posTint,
+                    icon = { ShareGlyph(c.pos) },
+                    title = if (current == UseCase.Caja) "Compartir corte" else "Compartir resumen",
+                    sub = "Manda el resumen por WhatsApp o PDF",
+                    onClick = onShare,
+                )
+            }
+            // 2 · Ajustes (todos; subtítulo contextual)
+            MenuOptionRow(
+                c = c,
+                iconBg = c.tint,
+                icon = { SettingsGlyph(c.tintInk) },
+                title = "Ajustes",
+                sub = when (current) {
+                    UseCase.Personal -> "Presupuesto"
+                    UseCase.Gastos -> "Nombre, contactos y categorías"
+                    UseCase.Caja -> "Nombre, responsable y contactos"
+                },
+                onClick = onOpenSettings,
+            )
+            // 3 · Cerrar periodo (solo personal)
+            if (current == UseCase.Personal) {
+                MenuOptionRow(
+                    c = c,
+                    rowBg = c.warnTint,
+                    iconBg = c.surface,
+                    iconBorder = c.warn,
+                    icon = { ClosePeriodGlyph(c.warn) },
+                    title = "Cerrar periodo",
+                    sub = "Quincena 2 · 16–30 jun",
+                    onClick = onClosePeriod,
+                )
+            }
+            // 4 · Historial (todos)
+            MenuOptionRow(
+                c = c,
+                iconBg = c.tint,
+                icon = { ClockGlyph(c.primary) },
+                title = "Historial",
+                sub = "Periodos cerrados · reenviar o auditar",
+                onClick = onOpenHistory,
+            )
+            // 5 · Reponer fondo (solo caja)
+            if (current == UseCase.Caja) {
+                MenuOptionRow(
+                    c = c,
+                    iconBg = c.warnTint,
+                    icon = { TrayGlyph(c.warn) },
+                    title = "Reponer fondo",
+                    sub = "Sube el saldo sin cerrar el periodo",
+                    onClick = onReplenish,
+                )
+            }
+            // 6 · Salir del grupo (solo grupo; con divisor y en rojo)
+            if (current == UseCase.Gastos) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(c.line))
+                MenuOptionRow(
+                    c = c,
+                    rowBg = c.negTint,
+                    iconBg = c.surface,
+                    icon = { ExitGlyph(c.neg) },
+                    title = "Salir del grupo",
+                    titleColor = c.neg,
+                    sub = "Archívalo y conserva el historial",
+                    onClick = onLeave,
+                )
             }
         }
+    }
+}
 
-        if (current == UseCase.Gastos) {
-            Box(
-                Modifier.fillMaxWidth().padding(top = 6.dp).clip(Kuodra.shape.lg).background(c.negTint)
-                    .clickable(onClick = onLeave).padding(vertical = 14.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text("Salir del grupo", style = Kuodra.type.heading, color = c.neg) }
+/** Fila del menú: caja de icono 42dp + título + subtítulo. */
+@Composable
+private fun MenuOptionRow(
+    c: KuodraColors,
+    iconBg: Color,
+    icon: @Composable () -> Unit,
+    title: String,
+    sub: String,
+    onClick: () -> Unit,
+    rowBg: Color = c.surface2,
+    iconBorder: Color? = null,
+    titleColor: Color = c.ink,
+) {
+    Row(
+        Modifier.fillMaxWidth().clip(Kuodra.shape.lg).background(rowBg)
+            .clickable(onClick = onClick).padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(42.dp).clip(Kuodra.shape.md).background(iconBg)
+                .then(if (iconBorder != null) Modifier.border(1.dp, iconBorder, Kuodra.shape.md) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) { icon() }
+        Column(Modifier.weight(1f)) {
+            Text(title, style = Kuodra.type.heading, color = titleColor)
+            Text(sub, style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(top = 1.dp))
+        }
+    }
+}
+
+// ---- Iconos de línea del menú (Canvas/Box, mismo estilo que KuodraIcons) ----
+
+/** Burbuja de chat (compartir): círculo con la esquina inferior-izquierda recta. */
+@Composable
+private fun ShareGlyph(color: Color) {
+    Box(Modifier.size(17.dp).border(2.5.dp, color,
+        RoundedCornerShape(topStartPercent = 50, topEndPercent = 50, bottomEndPercent = 50, bottomStartPercent = 15)))
+}
+
+/** Diana de ajustes: anillo con punto central. */
+@Composable
+private fun SettingsGlyph(color: Color) {
+    Box(
+        Modifier.size(16.dp).clip(Kuodra.shape.pill).border(2.5.dp, color, Kuodra.shape.pill),
+        contentAlignment = Alignment.Center,
+    ) { Box(Modifier.size(6.dp).clip(Kuodra.shape.pill).background(color)) }
+}
+
+/** Maletín de "cerrar periodo": cuerpo con asa superior. */
+@Composable
+private fun ClosePeriodGlyph(color: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(width = 8.dp, height = 4.dp).border(2.dp, color,
+            RoundedCornerShape(topStartPercent = 60, topEndPercent = 60, bottomEndPercent = 0, bottomStartPercent = 0)))
+        Box(Modifier.size(width = 16.dp, height = 13.dp).border(2.5.dp, color, Kuodra.shape.sm))
+    }
+}
+
+/** Reloj (historial): círculo con dos manecillas. */
+@Composable
+private fun ClockGlyph(color: Color) {
+    Box(Modifier.size(17.dp).clip(Kuodra.shape.pill).border(2.5.dp, color, Kuodra.shape.pill)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val sw = 2.dp.toPx()
+            drawLine(color, Offset(cx, cy), Offset(cx, cy - size.height * 0.26f), sw, cap = StrokeCap.Round)
+            drawLine(color, Offset(cx, cy), Offset(cx + size.width * 0.2f, cy), sw, cap = StrokeCap.Round)
+        }
+    }
+}
+
+/** Cajón/bandeja (reponer fondo): rectángulo con ranura. */
+@Composable
+private fun TrayGlyph(color: Color) {
+    Box(
+        Modifier.size(width = 21.dp, height = 15.dp).border(2.dp, color, Kuodra.shape.sm),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Box(Modifier.padding(top = 3.dp).size(width = 7.dp, height = 2.5.dp)
+            .clip(Kuodra.shape.pill).background(color))
+    }
+}
+
+/** Puerta con flecha hacia afuera (salir del grupo). */
+@Composable
+private fun ExitGlyph(color: Color) {
+    Canvas(Modifier.size(18.dp)) {
+        val sw = 2.5.dp.toPx()
+        val w = size.width
+        val h = size.height
+        val join = androidx.compose.ui.graphics.StrokeJoin.Round
+        // marco de puerta (C abierta a la derecha)
+        val door = Path().apply {
+            moveTo(w * 0.5f, 0f); lineTo(w * 0.08f, 0f); lineTo(w * 0.08f, h); lineTo(w * 0.5f, h)
+        }
+        drawPath(door, color, style = Stroke(width = sw, cap = StrokeCap.Round, join = join))
+        // flecha →
+        val cy = h / 2f
+        drawLine(color, Offset(w * 0.4f, cy), Offset(w, cy), sw, cap = StrokeCap.Round)
+        val arrow = Path().apply {
+            moveTo(w * 0.78f, cy - h * 0.18f); lineTo(w, cy); lineTo(w * 0.78f, cy + h * 0.18f)
+        }
+        drawPath(arrow, color, style = Stroke(width = sw, cap = StrokeCap.Round, join = join))
+    }
+}
+
+// ---- Sheets disparados desde el menú ----
+
+/** Compartir resumen/corte: opciones PDF / WhatsApp (sin canal real, igual que el reshare). */
+@Composable
+private fun ShareSheet(c: KuodraColors, current: UseCase, onClose: () -> Unit, onShare: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+        SheetHeader(c, if (current == UseCase.Caja) "Compartir corte" else "Compartir resumen", onClose)
+        Column(
+            Modifier.padding(horizontal = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            ShareButton(c, "Compartir PDF", onShare)
+            ShareButton(c, "Enviar por WhatsApp", onShare)
         }
     }
 }
 
 @Composable
-private fun MenuAction(c: KuodraColors, label: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(Kuodra.shape.lg).clickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun ShareButton(c: KuodraColors, label: String, onClick: () -> Unit) {
+    Box(
+        Modifier.fillMaxWidth().clip(Kuodra.shape.lg).background(c.surface2)
+            .border(1.dp, c.line, Kuodra.shape.lg).clickable(onClick = onClick).padding(vertical = 15.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(label, style = Kuodra.type.heading, color = c.ink) }
+}
+
+/** Confirmación tras compartir. */
+@Composable
+private fun ShareDoneSheet(c: KuodraColors, current: UseCase, onClose: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 8.dp, bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(label, style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
-        Chevron(7.dp, c.ink3)
+        Box(Modifier.size(56.dp).clip(Kuodra.shape.pill).background(c.posTint), contentAlignment = Alignment.Center) {
+            Text("✓", style = Kuodra.type.displayAmount, color = c.pos)
+        }
+        Text(if (current == UseCase.Caja) "Corte enviado" else "Resumen enviado",
+            style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(top = 12.dp))
+        Text("Se compartió el resumen del periodo.", style = Kuodra.type.caption, color = c.ink2,
+            modifier = Modifier.padding(top = 4.dp))
+        Box(
+            Modifier.fillMaxWidth().padding(top = 18.dp).clip(Kuodra.shape.lg).background(c.primary)
+                .clickable(onClick = onClose).padding(vertical = 15.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("Entendido", style = Kuodra.type.heading, color = c.primaryInk) }
+    }
+}
+
+/** Cerrar periodo (Personal): confirmación con resumen del periodo. */
+@Composable
+private fun ClosePeriodSheet(c: KuodraColors, onClose: () -> Unit, onConfirm: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+        SheetHeader(c, "Cerrar periodo", onClose)
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            Column(Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface2).padding(17.dp)) {
+                Text("Periodo actual", style = Kuodra.type.caption, color = c.ink3)
+                Text("Quincena 2 · 16–30 jun", style = Kuodra.type.heading, color = c.ink,
+                    modifier = Modifier.padding(top = 4.dp))
+                Row(
+                    Modifier.padding(top = 10.dp),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text("$980", style = Kuodra.type.titleScreen, color = c.ink)
+                    Text("gastado", style = Kuodra.type.caption, color = c.ink3,
+                        modifier = Modifier.padding(bottom = 4.dp))
+                }
+            }
+            Text("El periodo quedará archivado en el Historial. No podrás editarlo después.",
+                style = Kuodra.type.caption, color = c.ink3,
+                modifier = Modifier.padding(top = 16.dp, bottom = 18.dp, start = 2.dp, end = 2.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.surface2)
+                        .border(1.dp, c.line, Kuodra.shape.lg).clickable(onClick = onClose).padding(vertical = 15.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("Cancelar", style = Kuodra.type.heading, color = c.ink) }
+                Box(
+                    Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.primary)
+                        .clickable(onClick = onConfirm).padding(vertical = 15.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("Cerrar periodo", style = Kuodra.type.heading, color = c.primaryInk) }
+            }
+        }
+    }
+}
+
+/** Confirmación tras cerrar el periodo. */
+@Composable
+private fun ClosePeriodDoneSheet(c: KuodraColors, onClose: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 8.dp, bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(56.dp).clip(Kuodra.shape.pill).background(c.posTint), contentAlignment = Alignment.Center) {
+            Text("✓", style = Kuodra.type.displayAmount, color = c.pos)
+        }
+        Text("Periodo cerrado", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(top = 12.dp))
+        Text("Lo archivamos en el Historial.", style = Kuodra.type.caption, color = c.ink2,
+            modifier = Modifier.padding(top = 4.dp))
+        Box(
+            Modifier.fillMaxWidth().padding(top = 18.dp).clip(Kuodra.shape.lg).background(c.primary)
+                .clickable(onClick = onClose).padding(vertical = 15.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("Entendido", style = Kuodra.type.heading, color = c.primaryInk) }
     }
 }
 

@@ -19,6 +19,9 @@ object DateLabels {
         "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo",
     )
 
+    /** Nombre del día de la semana a partir de su índice ISO (1 = lunes … 7 = domingo). */
+    fun weekdayName(weekday: Int): String = WEEKDAYS_LONG[(weekday - 1).coerceIn(0, 6)]
+
     /** "20 jun" */
     fun dayMonth(date: LocalDate): String = "${date.dayOfMonth} ${MONTHS_SHORT[date.monthValue - 1]}"
 

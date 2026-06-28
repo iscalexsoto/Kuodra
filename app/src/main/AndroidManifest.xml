@@ -23,6 +23,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".presentation.crash.CrashActivity"
+            android:exported="false"
+            android:process=":crash"
+            android:theme="@style/Theme.Kuodra" />
     </application>
 
 </manifest>

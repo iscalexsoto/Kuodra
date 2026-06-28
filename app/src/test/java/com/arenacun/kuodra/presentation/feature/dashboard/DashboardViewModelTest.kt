@@ -8,7 +8,6 @@ import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.Space
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.repository.MovementRepository
-import com.arenacun.kuodra.domain.repository.PreferencesRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -52,11 +51,6 @@ class DashboardViewModelTest {
         override fun categories(): List<Category> = emptyList()
     }
 
-    private class FakePreferencesRepository : PreferencesRepository {
-        override val darkTheme: StateFlow<Boolean> = MutableStateFlow(false)
-        override fun toggleTheme() = Unit
-    }
-
     @Test
     fun `deleting a movement removes it from the dashboard state`() = runTest {
         val movementRepository = FakeMovementRepository(listOf(movement("a"), movement("b")))
@@ -64,7 +58,6 @@ class DashboardViewModelTest {
             spaceRepository = FakeSpaceRepository(),
             movementRepository = movementRepository,
             summaryRepository = FakeSummaryRepository(),
-            preferences = FakePreferencesRepository(),
         )
 
         // Activa la suscripción (SharingStarted.WhileSubscribed).
@@ -77,5 +70,30 @@ class DashboardViewModelTest {
 
         assertEquals(listOf("b"), viewModel.uiState.value.movements.map { it.id })
         collectJob.cancel()
+    }
+
+    @Test
+    fun `menu actions open the matching sheet`() = runTest {
+        val viewModel = DashboardViewModel(
+            spaceRepository = FakeSpaceRepository(),
+            movementRepository = FakeMovementRepository(emptyList()),
+            summaryRepository = FakeSummaryRepository(),
+        )
+
+        viewModel.onOpenMenu()
+        assertEquals(DashboardSheet.Menu, viewModel.overlay.value.sheet)
+
+        viewModel.onShare()
+        assertEquals(DashboardSheet.Share, viewModel.overlay.value.sheet)
+        viewModel.onShareConfirm()
+        assertEquals(DashboardSheet.Shared, viewModel.overlay.value.sheet)
+
+        viewModel.onClosePeriod()
+        assertEquals(DashboardSheet.PCloseConfirm, viewModel.overlay.value.sheet)
+        viewModel.onClosePeriodConfirm()
+        assertEquals(DashboardSheet.PClosed, viewModel.overlay.value.sheet)
+
+        viewModel.onCloseSheet()
+        assertEquals(DashboardSheet.None, viewModel.overlay.value.sheet)
     }
 }

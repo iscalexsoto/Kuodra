@@ -53,8 +53,24 @@ class SettingsViewModel(
     // ---- Presupuesto (Personal) ----
     fun onToggleBudget() = current().budget?.let { save(current().copy(budget = it.copy(enabled = !it.enabled))) }
     fun onSetFrequency(f: BudgetFrequency) = current().budget?.let { save(current().copy(budget = it.copy(frequency = f))) }
-    fun onClosingDayDelta(delta: Int) = current().budget?.let {
-        save(current().copy(budget = it.copy(closingDay = (it.closingDay + delta).coerceIn(1, 28))))
+
+    /** Día de la semana (Semanal): rota 1..7 con wraparound. */
+    fun onWeekdayDelta(delta: Int) = updateBudget {
+        it.copy(weekday = ((it.weekday - 1 + delta).mod(7)) + 1)
+    }
+    /** Quincenal: primer día de ingreso (1..28). */
+    fun onFirstDayDelta(delta: Int) = updateBudget { it.copy(firstDay = (it.firstDay + delta).coerceIn(1, 28)) }
+    /** Quincenal: segundo día de ingreso (1..31). */
+    fun onSecondDayDelta(delta: Int) = updateBudget { it.copy(secondDay = (it.secondDay + delta).coerceIn(1, 31)) }
+    /** Mensual: día del mes de ingreso (1..31). */
+    fun onMonthlyDayDelta(delta: Int) = updateBudget { it.copy(monthlyDay = (it.monthlyDay + delta).coerceIn(1, 31)) }
+    /** Personalizado: cada N días (2..90). */
+    fun onCustomIntervalDelta(delta: Int) = updateBudget {
+        it.copy(customInterval = (it.customInterval + delta).coerceIn(2, 90))
+    }
+
+    private inline fun updateBudget(transform: (com.arenacun.kuodra.domain.model.BudgetConfig) -> com.arenacun.kuodra.domain.model.BudgetConfig) {
+        current().budget?.let { save(current().copy(budget = transform(it))) }
     }
 
     // ---- Calculadora de monto (presupuesto / fondo) ----

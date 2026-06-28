@@ -23,12 +23,13 @@ enum class LeaveStep { None, Settle, Confirm, Done }
  * - [Spaces] selector "Tus espacios" (al tocar el título).
  * - [CreateSpace] opciones de tipo de espacio a crear.
  * - [Menu] menú de acciones del espacio actual (botón ···).
+ * - [Share] opciones de compartir resumen/corte (PDF/WhatsApp); [Shared] confirmación.
+ * - [PCloseConfirm] confirmación de cerrar periodo (Personal); [PClosed] éxito.
  */
-enum class DashboardSheet { None, Spaces, CreateSpace, Menu }
+enum class DashboardSheet { None, Spaces, CreateSpace, Menu, Share, Shared, PCloseConfirm, PClosed }
 
 /** Estado de los overlays del dashboard: hoja inferior activa y flujo de archivar. */
 data class DashboardOverlay(
     val sheet: DashboardSheet = DashboardSheet.None,
     val leaveStep: LeaveStep = LeaveStep.None,
-    val darkTheme: Boolean = false,
 )
