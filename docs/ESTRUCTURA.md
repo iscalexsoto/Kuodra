@@ -5,8 +5,9 @@ arquitectura): aquí está **el mapa concreto** de pantallas, navegación, compo
 dominio tras recrear el prototipo completo en Compose.
 
 > Estado: **maqueta de alta fidelidad con paridad total frente a los `.dc.html` de `reference/`**.
-> Sin backend; datos seed en memoria (`data/local/KuodraSeedSource`). La arquitectura ya está
-> lista para enchufar Room/Retrofit sin tocar UI ni contratos.
+> El **flujo de autenticación (correo + OTP) ya es real contra PocketBase** vía Ktor, con sesión
+> persistida en DataStore y gating de arranque. El resto de datos (movimientos, personas, ajustes,
+> historial) siguen siendo seed en memoria (`data/local/KuodraSeedSource`), pendientes de backend.
 
 ---
 
@@ -17,8 +18,9 @@ cableadas en [`navigation/KuodraNavHost.kt`](../app/src/main/java/com/arenacun/k
 
 | Destino | Pantalla | Prototipo | Entrada |
 |---|---|---|---|
-| `AuthGraph` → `Welcome`/`Email`/`Otp` | auth | `Kuodra Auth` | inicio |
-| `Mode` / `CreateSpace(useCase)` | onboarding | `isMode`/`isCreate` | tras OTP |
+| `AuthGraph` → `Welcome`/`Email`/`Otp` | auth (correo + OTP real, PocketBase) | `Kuodra Auth` | inicio (si no hay sesión) |
+| `Name` | onboarding: captura el nombre del usuario | — | tras OTP (o al arrancar sin nombre) |
+| `Mode` / `CreateSpace(useCase)` | onboarding | `isMode`/`isCreate` | tras `Name` |
 | `Dashboard` | dashboard | `scrDashboard` | raíz de app |
 | `AddMovement` | alta de movimiento | `scrAdd` | FAB "Agregar" |
 | `MovementDetail(id)` | detalle | `scrMovDetail` | fila de movimiento |
@@ -50,12 +52,13 @@ terminología, **no** el styling. Lo controla `Space.useCase` + `terminologyFor(
 
 ```
 com.arenacun.kuodra
-  KuodraApplication.kt          # startKoin(appModule, dataModule, presentationModule)
+  KuodraApplication.kt          # startKoin(appModule, networkModule, dataModule, presentationModule)
   MainActivity.kt               # setContent { KuodraRoot() }
-  di/                           # AppModule, DataModule, PresentationModule
+  di/                           # AppModule, NetworkModule, DataModule, PresentationModule
   domain/
     model/
       UseCase.kt                # enum + Terminology + terminologyFor()
+      Session.kt                # usuario autenticado (userId + email); el token vive en data
       Space.kt, Person.kt, Category.kt, AvatarTone.kt
       Movement.kt              # incluye date: LocalDate + SplitShare + helpers puros
       MovementCategory.kt      # catálogo del selector de categoría (defaults)
@@ -70,23 +73,30 @@ com.arenacun.kuodra
       AuthRepository, SpaceRepository, MovementRepository, SummaryRepository,
       PreferencesRepository, SettingsRepository
   data/
-    local/  KuodraSeedSource    # seed in-memory: movimientos, personas, categorías, settings, historial
-    repository/                 # *RepositoryImpl (incl. SettingsRepositoryImpl)
+    local/
+      KuodraSeedSource          # seed in-memory: movimientos, personas, categorías, settings, historial
+      KuodraDataStore           # extensión Context.kuodraDataStore (Preferences DataStore único)
+      SessionStore              # persiste token + identidad de la sesión PocketBase
+    remote/
+      PocketBaseClient          # HttpClient Ktor (OkHttp, JSON tolerante) + URLs de la colección users
+      AuthApi / KtorAuthApi     # request-otp / auth-with-otp / records (alta) / auth-refresh
+      dto/AuthDtos              # DTOs @Serializable de auth
+    repository/                 # *RepositoryImpl (AuthRepositoryImpl real; Space/Preferences en DataStore)
   presentation/
     KuodraRoot.kt, navigation/ (Destinations, KuodraNavHost)
     crash/      CrashHandler (uncaught exceptions) + CrashActivity (pantalla de crash)
-    app/        AppViewModel
+    app/        AppViewModel  # resuelve StartState (Loading/LoggedOut/NeedsName/Onboarding/Ready) al arrancar
     theme/      Theme(Kuodra accessor), Color(KuodraColors), Type, Shape
     component/
       KuodraButton, KuodraCard, KuodraTextField, KuodraBanner, KuodraListRow, KuodraHeroCard
-      KuodraIcons.kt           # Chevron, PlusIcon, KLogoMark, ToneAvatar, CategoryTag, avatar()
+      KuodraIcons.kt           # Chevron, PlusIcon, KLogoMark (logo oficial), ToneAvatar, CategoryTag, avatar()
       BackCircle
       KuodraCalculator         # numpad (dibuja CalcState, reenvía CalcKey)
       KuodraCalendar           # calendario (dibuja CalendarMonth, mes visible = remember)
       KuodraBottomSheet        # wrapper de ModalBottomSheet con tokens Kuodra
     feature/
       auth/        AuthViewModel + AuthUiState + Welcome/Email/Otp
-      onboarding/  ModeViewModel, CreateSpaceViewModel + Mode/CreateSpace
+      onboarding/  NameViewModel, ModeViewModel, CreateSpaceViewModel + Name/Mode/CreateSpace
       dashboard/   DashboardViewModel + DashboardUiState (incl. DashboardOverlay/LeaveStep) + DashboardScreen
       movement/    AddMovement{ViewModel,UiState,Screen}, MovementDetail{ViewModel,Screen}
       allmovements/AllMovements{ViewModel,UiState,Screen}
@@ -121,6 +131,16 @@ intenciones. Patrón a repetir para cualquier lógica nueva (p. ej. liquidación
 - Confirmaciones/flujos cortos inline: patrón `Box` + scrim con tokens (ver `MovementDetail.confirmDelete`
   y el flujo salir/archivar del dashboard).
 
+### Logo de marca (fuente única)
+La "K" de Kuodra vive **una sola vez** como vector oficial en `res/drawable/ic_kuodra_logo.xml`
+(monocromo). En pantalla se usa **siempre** vía `KLogoMark(boxSize, cornerRadius, background, foreground)`
+(`KuodraIcons.kt`): un `Box` redondeado con `background` que contiene el vector con
+`Icon(painterResource(ic_kuodra_logo), tint = foreground)`, así el logo hereda los tokens del tema
+(claro/oscuro). No se redibuja a mano. Usos: Splash (`KuodraRoot`), Welcome (`WelcomeScreen`) y header
+del Dashboard (versión chica, `boxSize = 38.dp`). El ícono de launcher es independiente (adaptive icon
+en `mipmap-anydpi*` + `ic_launcher_foreground/_monochrome` + `@color/ic_launcher_background`); si cambia
+el logo, edita esos drawables, nunca las pantallas.
+
 ### Pantalla adaptativa por caso de uso
 `SettingsScreen` es **una sola pantalla** que ramifica con `when (useCase)` (igual que `DashboardScreen`),
 no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` observable + `update()` del
@@ -134,6 +154,23 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
   `AllMovementsViewModel`): usar factory explícito `viewModel { VM(get(), get()) }`, **no** `viewModelOf`.
 - Contrato↔impl nuevo: `single { Impl(get()) } bind Contrato::class` en `DataModule`.
 
+### Autenticación y sesión (PocketBase)
+- Flujo OTP de dos pasos: `AuthRepository.requestOtp(email)` da de **alta-si-no-existe** (PocketBase
+  solo envía el código a registros existentes) y guarda el `otpId`; `verifyOtp(code)` lo canjea por
+  token+registro y persiste la sesión en `SessionStore` (DataStore). El token **no sale de `data`**.
+- **Nombre del usuario:** se captura en la pantalla `Name` del onboarding y `AuthRepository.updateName`
+  lo persiste en el registro `users` de PocketBase (PATCH) + cachea en `SessionStore`. Vive en
+  `Session.name` (identidad del usuario, distinta del nombre del espacio que maneja `CreateSpace`/`Settings`).
+- La URL de PocketBase llega por `BuildConfig.POCKETBASE_URL`, leída de `local.properties`
+  (`pocketbase.url=...`, no versionada; default `http://10.0.2.2:8090` para el emulador). HTTP en claro
+  permitido vía `res/xml/network_security_config.xml` (endurecer a HTTPS en producción).
+- **Gating de arranque:** `AppViewModel.restoreSession()` valida el token (`auth-refresh`; 4xx ⇒ logout,
+  error de red ⇒ conserva sesión) y `KuodraRoot` elige destino inicial: sin sesión→`AuthGraph`,
+  con sesión sin nombre→`Name`, con sesión sin onboarding→`Mode`, con sesión configurada→`Dashboard`
+  (mientras tanto, `Splash`).
+- El `UseCase` elegido en onboarding y el tema oscuro se **persisten en DataStore** (sobreviven reinicios).
+- Google OAuth: **diferido** (botón "Próximamente" deshabilitado en `WelcomeScreen`).
+
 ### Datos y "hoy"
 - El seed (`KuodraSeedSource`) ahora incluye `date: LocalDate` real en cada movimiento, los `SpaceSettings`
   por caso de uso y el historial de cortes.
@@ -146,9 +183,13 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
 
 ```bash
 ./gradlew :app:assembleDebug          # compilar
-./gradlew :app:testDebugUnitTest      # tests de host (domain puro + ViewModels con fakes)
+./gradlew :app:testDebugUnitTest      # tests de host (domain puro + ViewModels/repos con fakes)
 ./gradlew :app:installDebug           # instalar en dispositivo/emulador
 ```
+
+Para probar **auth end-to-end**: pon `pocketbase.url=...` en `local.properties` (no versionado) y
+ten la instancia PocketBase con `users` (OTP + Create rule pública + SMTP). El test
+`AuthRepositoryImplTest` cubre la orquestación (alta-si-falta, `otpId`, persistencia, signOut) sin red.
 
 Pendiente recurrente: recorrido manual en emulador comparando 1:1 contra los `.dc.html` de
 `reference/` en tema claro y oscuro (los hex y medidas del handoff son la fuente de verdad).

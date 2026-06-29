@@ -38,13 +38,15 @@ fun ModeScreen(
 ) {
     val c = Kuodra.colors
     val selectedMode by viewModel.selectedMode.collectAsStateWithLifecycle()
+    val userName by viewModel.userName.collectAsStateWithLifecycle()
 
     Column(
         Modifier.fillMaxSize().background(c.screenBg)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 22.dp, vertical = 28.dp),
     ) {
-        Text("Bienvenido a Kuodra,\nDiego", style = Kuodra.type.titleScreen, color = c.ink)
+        val greeting = if (userName.isNotBlank()) "Bienvenido a Kuodra,\n$userName" else "Bienvenido a Kuodra"
+        Text(greeting, style = Kuodra.type.titleScreen, color = c.ink)
         Text(
             "¿Qué quieres configurar además de tus gastos personales?",
             style = Kuodra.type.body, color = c.ink2,

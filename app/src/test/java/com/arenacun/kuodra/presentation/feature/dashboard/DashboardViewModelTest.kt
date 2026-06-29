@@ -36,6 +36,7 @@ class DashboardViewModelTest {
         override val activeSpace: StateFlow<Space> = MutableStateFlow(Space(UseCase.Gastos))
         override fun selectUseCase(useCase: UseCase) = Unit
         override fun createSpace(useCase: UseCase, name: String) = Unit
+        override suspend fun isConfigured(): Boolean = true
     }
 
     private class FakeMovementRepository(initial: List<Movement>) : MovementRepository {

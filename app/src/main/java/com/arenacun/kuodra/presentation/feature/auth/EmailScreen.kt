@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +37,11 @@ fun EmailScreen(
     val c = Kuodra.colors
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val valid = state.emailValid
+    val enabled = valid && !state.requesting
+
+    LaunchedEffect(Unit) {
+        viewModel.otpSent.collect { onCodeSent() }
+    }
 
     Column(
         Modifier.fillMaxSize().background(c.screenBg),
@@ -87,20 +93,21 @@ fun EmailScreen(
                 Modifier
                     .fillMaxWidth()
                     .clip(Kuodra.shape.lg)
-                    .background(if (valid) c.primary else c.line)
-                    .clickable(enabled = valid) {
-                        viewModel.requestOtp()
-                        onCodeSent()
-                    }
+                    .background(if (enabled) c.primary else c.line)
+                    .clickable(enabled = enabled) { viewModel.requestOtp() }
                     .padding(vertical = 17.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Enviar código", style = Kuodra.type.heading,
-                    color = if (valid) c.primaryInk else c.ink3)
+                Text(
+                    if (state.requesting) "Enviando…" else "Enviar código",
+                    style = Kuodra.type.heading,
+                    color = if (enabled) c.primaryInk else c.ink3,
+                )
             }
             Text(
-                "El botón se activa cuando el correo tiene un formato válido.",
-                style = Kuodra.type.caption, color = c.ink3,
+                state.requestError ?: "El botón se activa cuando el correo tiene un formato válido.",
+                style = Kuodra.type.caption,
+                color = if (state.requestError != null) c.neg else c.ink3,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             )

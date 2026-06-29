@@ -18,6 +18,7 @@ sealed interface Destination {
     @Serializable data object Otp : Destination
 
     // --- Onboarding ---
+    @Serializable data object Name : Destination
     @Serializable data object Mode : Destination
     @Serializable data class CreateSpace(val useCase: UseCase) : Destination
 

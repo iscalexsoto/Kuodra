@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,10 +54,16 @@ import org.koin.androidx.compose.koinViewModel
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenHistory: () -> Unit,
+    onSignedOut: () -> Unit,
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val c = Kuodra.colors
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.signedOut.collect { onSignedOut() }
+    }
+
     val settings = state.settings ?: return
 
     Column(
@@ -131,6 +138,30 @@ fun SettingsScreen(
             ) {
                 Text("Tema oscuro", style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
                 KToggle(c, state.darkTheme, viewModel::onToggleTheme)
+            }
+        }
+
+        // Cuenta (correo de la sesión + cerrar sesión)
+        SectionLabel(c, "CUENTA")
+        Card(c) {
+            Column(Modifier.fillMaxWidth()) {
+                viewModel.accountEmail?.let { email ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Correo", style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
+                        Text(email, style = Kuodra.type.caption, color = c.ink3)
+                    }
+                    Divider(c)
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = viewModel::onSignOut)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Cerrar sesión", style = Kuodra.type.body, color = c.neg, modifier = Modifier.weight(1f))
+                }
             }
         }
     }

@@ -25,16 +25,20 @@ import com.arenacun.kuodra.presentation.feature.movement.AddMovementScreen
 import com.arenacun.kuodra.presentation.feature.movement.MovementDetailScreen
 import com.arenacun.kuodra.presentation.feature.onboarding.CreateSpaceScreen
 import com.arenacun.kuodra.presentation.feature.onboarding.ModeScreen
+import com.arenacun.kuodra.presentation.feature.onboarding.NameScreen
 import com.arenacun.kuodra.presentation.feature.replenish.ReplenishScreen
 import com.arenacun.kuodra.presentation.feature.settings.SettingsScreen
 import com.arenacun.kuodra.presentation.feature.settle.SettleScreen
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
-fun KuodraNavHost(navController: NavHostController = rememberNavController()) {
+fun KuodraNavHost(
+    navController: NavHostController = rememberNavController(),
+    startDestination: Destination = Destination.AuthGraph,
+) {
     NavHost(
         navController = navController,
-        startDestination = Destination.AuthGraph,
+        startDestination = startDestination,
         // Réplica de la transición scrIn del prototipo: fade + slide-up 8px.
         enterTransition = { fadeIn(tween(280)) + slideInVertically(tween(280)) { 8 } },
         exitTransition = { fadeOut(tween(120)) },
@@ -59,7 +63,7 @@ fun KuodraNavHost(navController: NavHostController = rememberNavController()) {
                     onBack = { navController.popBackStack() },
                     onChangeEmail = { navController.popBackStack() },
                     onVerified = {
-                        navController.navigate(Destination.Mode) {
+                        navController.navigate(Destination.Name) {
                             popUpTo(Destination.AuthGraph) { inclusive = true }
                         }
                     },
@@ -68,6 +72,15 @@ fun KuodraNavHost(navController: NavHostController = rememberNavController()) {
         }
 
         // ===== Onboarding =====
+        composable<Destination.Name> {
+            NameScreen(
+                onContinue = {
+                    navController.navigate(Destination.Mode) {
+                        popUpTo(Destination.Name) { inclusive = true }
+                    }
+                },
+            )
+        }
         composable<Destination.Mode> {
             ModeScreen(
                 onContinueToCreate = { useCase -> navController.navigate(Destination.CreateSpace(useCase)) },
@@ -116,6 +129,11 @@ fun KuodraNavHost(navController: NavHostController = rememberNavController()) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenHistory = { navController.navigate(Destination.History) },
+                onSignedOut = {
+                    navController.navigate(Destination.AuthGraph) {
+                        popUpTo(navController.graph.id) { inclusive = true }
+                    }
+                },
             )
         }
         composable<Destination.History> {

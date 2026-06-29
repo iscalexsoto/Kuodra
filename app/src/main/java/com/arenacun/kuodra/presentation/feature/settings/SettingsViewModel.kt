@@ -9,14 +9,18 @@ import com.arenacun.kuodra.domain.model.CalcKey
 import com.arenacun.kuodra.domain.model.CalcState
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.SpaceSettings
+import com.arenacun.kuodra.domain.repository.AuthRepository
 import com.arenacun.kuodra.domain.repository.PreferencesRepository
 import com.arenacun.kuodra.domain.repository.SettingsRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
  * Ajustes del espacio (pantalla adaptativa por caso de uso). Lee el [SettingsRepository] y
@@ -27,9 +31,24 @@ class SettingsViewModel(
     spaceRepository: SpaceRepository,
     private val settingsRepository: SettingsRepository,
     private val preferences: PreferencesRepository,
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
 
     val useCase = spaceRepository.activeSpace.value.useCase
+
+    /** Correo de la sesión activa (para mostrar en la sección de cuenta). */
+    val accountEmail: String? = authRepository.session.value?.email
+
+    /** Evento de una sola vez: la sesión se cerró ⇒ navegar al flujo de auth. */
+    private val _signedOut = Channel<Unit>(Channel.BUFFERED)
+    val signedOut = _signedOut.receiveAsFlow()
+
+    fun onSignOut() {
+        viewModelScope.launch {
+            authRepository.signOut()
+            _signedOut.send(Unit)
+        }
+    }
 
     private data class Local(
         val calcTarget: CalcTarget? = null,

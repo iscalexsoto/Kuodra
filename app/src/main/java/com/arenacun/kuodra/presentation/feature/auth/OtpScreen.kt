@@ -101,8 +101,10 @@ fun OtpScreen(
                     .clip(Kuodra.shape.md).background(c.tint).padding(vertical = 8.dp, horizontal = 12.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Demo: ingresa 1·2·3·4·5·6 para continuar.",
-                    style = Kuodra.type.caption, color = c.primary, textAlign = TextAlign.Center)
+                Text(
+                    if (state.verifying) "Verificando…" else "¿No te llegó? Revisa la carpeta de spam.",
+                    style = Kuodra.type.caption, color = c.primary, textAlign = TextAlign.Center,
+                )
             }
         }
     }

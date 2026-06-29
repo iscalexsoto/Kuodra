@@ -84,14 +84,13 @@ fun WelcomeScreen(onContinue: () -> Unit) {
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            // Continuar con Google (outline)
+            // Continuar con Google (outline) — placeholder: OAuth llega en una próxima versión.
             Row(
                 Modifier
                     .fillMaxWidth()
                     .clip(Kuodra.shape.lg)
                     .background(c.surface)
                     .border(BorderStroke(1.5.dp, c.line), Kuodra.shape.lg)
-                    .clickable { onContinue() }
                     .padding(15.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
@@ -99,9 +98,11 @@ fun WelcomeScreen(onContinue: () -> Unit) {
                 Box(
                     Modifier.size(24.dp).clip(Kuodra.shape.pill).border(1.5.dp, c.line, Kuodra.shape.pill),
                     contentAlignment = Alignment.Center,
-                ) { Text("G", style = Kuodra.type.heading, color = c.primary) }
+                ) { Text("G", style = Kuodra.type.heading, color = c.ink3) }
                 Spacer(Modifier.width(11.dp))
-                Text("Continuar con Google", style = Kuodra.type.heading, color = c.ink)
+                Text("Continuar con Google", style = Kuodra.type.heading, color = c.ink3)
+                Spacer(Modifier.width(8.dp))
+                Text("Próximamente", style = Kuodra.type.caption, color = c.ink3)
             }
             // Continuar con correo (primary)
             Row(

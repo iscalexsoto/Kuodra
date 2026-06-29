@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -13,8 +14,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.arenacun.kuodra.R
 import com.arenacun.kuodra.presentation.theme.Kuodra
 import com.arenacun.kuodra.presentation.theme.KuodraColors
 import com.arenacun.kuodra.domain.model.AvatarTone
@@ -34,8 +37,9 @@ fun KuodraColors.avatarBg(tone: AvatarTone): Color = avatar(tone).bg
 fun KuodraColors.avatarInk(tone: AvatarTone): Color = avatar(tone).ink
 
 /**
- * Logo "K" de Kuodra: rejilla 2×2 donde la diagonal está cortada para formar la K.
- * `box` es el lado del contenedor cuadrado; `cell` el lado de la rejilla interior.
+ * Logo "K" de Kuodra dentro de un contenedor cuadrado redondeado.
+ * Usa el vector oficial `ic_kuodra_logo` tintado con `foreground` sobre `background`,
+ * así respeta los tokens de tema (claro/oscuro). `gridSize` es el lado del logo interior.
  */
 @Composable
 fun KLogoMark(
@@ -43,7 +47,7 @@ fun KLogoMark(
     cornerRadius: Dp,
     background: Color,
     foreground: Color,
-    gridSize: Dp = boxSize * 0.52f,
+    gridSize: Dp = boxSize * 0.62f,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -53,27 +57,12 @@ fun KLogoMark(
             .background(background),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(gridSize)) {
-            val gap = size.width * 0.12f
-            val cell = (size.width - gap) / 2f
-            val r = cell * 0.16f
-            // top-left full
-            drawRoundRect(foreground, Offset(0f, 0f), androidx.compose.ui.geometry.Size(cell, cell),
-                androidx.compose.ui.geometry.CornerRadius(r, r))
-            // bottom-left full
-            drawRoundRect(foreground, Offset(0f, cell + gap), androidx.compose.ui.geometry.Size(cell, cell),
-                androidx.compose.ui.geometry.CornerRadius(r, r))
-            // top-right: lower-left triangle (clip-path polygon(0 0,100% 0,0 100%))
-            val tr = Path().apply {
-                moveTo(cell + gap, 0f); lineTo(size.width, 0f); lineTo(cell + gap, cell); close()
-            }
-            drawPath(tr, foreground)
-            // bottom-right: upper-left triangle (clip-path polygon(0 0,0 100%,100% 100%))
-            val br = Path().apply {
-                moveTo(cell + gap, cell + gap); lineTo(cell + gap, size.height); lineTo(size.width, size.height); close()
-            }
-            drawPath(br, foreground)
-        }
+        Icon(
+            painter = painterResource(R.drawable.ic_kuodra_logo),
+            contentDescription = null, // decorativo; el texto "Kuodra" acompaña en Welcome/Splash
+            tint = foreground,
+            modifier = Modifier.size(gridSize),
+        )
     }
 }
 

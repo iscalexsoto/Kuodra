@@ -3,6 +3,7 @@ package com.arenacun.kuodra
 import android.app.Application
 import com.arenacun.kuodra.di.appModule
 import com.arenacun.kuodra.di.dataModule
+import com.arenacun.kuodra.di.networkModule
 import com.arenacun.kuodra.di.presentationModule
 import com.arenacun.kuodra.presentation.crash.CrashHandler
 import org.koin.android.ext.koin.androidContext
@@ -21,7 +22,7 @@ class KuodraApplication : Application() {
             startKoin {
                 androidLogger()
                 androidContext(this@KuodraApplication)
-                modules(appModule, dataModule, presentationModule)
+                modules(appModule, networkModule, dataModule, presentationModule)
             }
         }
     }

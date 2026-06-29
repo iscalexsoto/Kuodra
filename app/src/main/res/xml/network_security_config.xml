@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Permite tráfico HTTP en claro para una instancia PocketBase de desarrollo
+  (emulador 10.0.2.2, localhost o IP de LAN). En producción la URL debería ser
+  HTTPS; entonces conviene endurecer esto a cleartextTrafficPermitted="false".
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

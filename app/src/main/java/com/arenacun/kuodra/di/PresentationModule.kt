@@ -14,6 +14,7 @@ import com.arenacun.kuodra.presentation.feature.settle.SettleViewModel
 import com.arenacun.kuodra.presentation.feature.movement.MovementDetailViewModel
 import com.arenacun.kuodra.presentation.feature.onboarding.CreateSpaceViewModel
 import com.arenacun.kuodra.presentation.feature.onboarding.ModeViewModel
+import com.arenacun.kuodra.presentation.feature.onboarding.NameViewModel
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
@@ -22,6 +23,7 @@ import org.koin.dsl.module
 val presentationModule = module {
     viewModelOf(::AppViewModel)
     viewModelOf(::AuthViewModel)
+    viewModelOf(::NameViewModel)
     viewModelOf(::ModeViewModel)
     viewModelOf(::DashboardViewModel)
     viewModelOf(::AddMovementViewModel)
