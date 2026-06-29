@@ -10,11 +10,14 @@ interface MovementRepository {
     fun movements(useCase: UseCase): Flow<List<Movement>>
 
     /** Busca un movimiento por id dentro del caso de uso. */
-    fun movement(useCase: UseCase, id: String): Movement?
-
-    /** Marca un movimiento como eliminado. */
-    fun delete(id: String)
+    suspend fun movement(useCase: UseCase, id: String): Movement?
 
     /** Agrega un movimiento al caso de uso indicado. */
-    fun add(useCase: UseCase, movement: Movement)
+    suspend fun add(useCase: UseCase, movement: Movement)
+
+    /** Actualiza un movimiento existente. */
+    suspend fun update(useCase: UseCase, movement: Movement)
+
+    /** Marca un movimiento como eliminado. */
+    suspend fun delete(useCase: UseCase, id: String)
 }

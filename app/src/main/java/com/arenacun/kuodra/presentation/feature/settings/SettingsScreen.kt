@@ -36,11 +36,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.BudgetFrequency
+import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.DateLabels
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.component.BackCircle
+import com.arenacun.kuodra.presentation.component.CategoryEditSheet
+import com.arenacun.kuodra.presentation.component.CategoryTag
 import com.arenacun.kuodra.presentation.component.Chevron
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
 import com.arenacun.kuodra.presentation.component.KuodraCalculator
@@ -104,7 +107,10 @@ fun SettingsScreen(
         }
 
         when (state.useCase) {
-            UseCase.Personal -> settings.budget?.let { BudgetSection(c, it, viewModel) }
+            UseCase.Personal -> {
+                settings.budget?.let { BudgetSection(c, it, viewModel) }
+                CategoriesSection(c, state.categories, viewModel)
+            }
             UseCase.Gastos -> {
                 MembersSection(c, "MIEMBROS", settings.members, viewModel)
                 ReminderRow(c, "Recordatorio de liquidación", settings.reminderEnabled, viewModel::onToggleReminder)
@@ -181,6 +187,54 @@ fun SettingsScreen(
     state.editingContact?.let { draft ->
         KuodraBottomSheet(onDismiss = viewModel::onCloseContact) {
             ContactSheet(c, draft, viewModel)
+        }
+    }
+    state.editingCategory?.let { draft ->
+        KuodraBottomSheet(onDismiss = viewModel::onCloseCategory) {
+            CategoryEditSheet(
+                c = c,
+                draft = draft,
+                onName = viewModel::onCategoryDraftName,
+                onTone = viewModel::onCategoryDraftTone,
+                onConfirm = viewModel::onConfirmCategory,
+                onDelete = if (draft.original != null) viewModel::onDeleteCategory else null,
+            )
+        }
+    }
+}
+
+/** Sección "Categorías" (Personal): catálogo del usuario; la estática "Sin categoría" no se edita. */
+@Composable
+private fun CategoriesSection(c: KuodraColors, categories: List<Category>, viewModel: SettingsViewModel) {
+    SectionLabel(c, "CATEGORÍAS")
+    Card(c) {
+        Column(Modifier.fillMaxWidth()) {
+            categories.forEach { cat ->
+                val editable = !cat.isStatic
+                Row(
+                    Modifier.fillMaxWidth()
+                        .then(if (editable) Modifier.clickable { viewModel.onEditCategory(cat) } else Modifier)
+                        .padding(horizontal = 15.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CategoryTag(cat.tag, cat.tone, size = 36.dp)
+                    Text(cat.name, style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
+                    if (editable) Chevron(7.dp, c.ink3, degrees = 90f)
+                }
+                Divider(c)
+            }
+            Row(
+                Modifier.fillMaxWidth().clickable { viewModel.onStartCreateCategory() }
+                    .padding(horizontal = 15.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(36.dp).clip(Kuodra.shape.pill).background(c.tint), contentAlignment = Alignment.Center) {
+                    PlusIcon(16.dp, c.tintInk, thickness = 2.5.dp)
+                }
+                Text("Crear categoría", style = Kuodra.type.body, color = c.tintInk)
+            }
         }
     }
 }

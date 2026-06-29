@@ -1,8 +1,10 @@
 package com.arenacun.kuodra.presentation.feature.settings
 
 import com.arenacun.kuodra.domain.model.CalcState
+import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.UseCase
+import com.arenacun.kuodra.presentation.component.CategoryDraft
 
 /** Campo monetario que está editando la calculadora dentro de ajustes. */
 enum class CalcTarget { Budget, Fund }
@@ -22,4 +24,8 @@ data class SettingsUiState(
     val calcTarget: CalcTarget? = null,
     val calc: CalcState = CalcState(),
     val editingContact: ContactDraft? = null,
+    /** Catálogo de categorías del usuario (Personal); incluye la estática "Sin categoría". */
+    val categories: List<Category> = emptyList(),
+    /** Borrador de creación/edición de categoría (null = ninguno). */
+    val editingCategory: CategoryDraft? = null,
 )

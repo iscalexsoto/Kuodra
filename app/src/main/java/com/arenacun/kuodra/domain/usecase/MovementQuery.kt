@@ -27,16 +27,22 @@ data class MovementGroup(val header: String, val movements: List<Movement>)
 
 /**
  * Búsqueda, filtrado y agrupación de movimientos para "Ver todo" (`scrVerTodo`). Funciones
- * puras: sin Android, testeables en host.
+ * puras: sin Android, testeables en host. Como el [Movement] ya no guarda el nombre de categoría
+ * (solo `categoryId`), [filter] recibe un resolutor [categoryName] para buscar/filtrar por nombre.
  */
 object MovementQuery {
 
-    fun filter(movements: List<Movement>, filter: MovementFilter, today: LocalDate): List<Movement> {
+    fun filter(
+        movements: List<Movement>,
+        filter: MovementFilter,
+        today: LocalDate,
+        categoryName: (Movement) -> String,
+    ): List<Movement> {
         val q = filter.query.trim().lowercase()
         return movements.filter { m ->
-            (q.isEmpty() || matchesQuery(m, q)) &&
-                (filter.categories.isEmpty() || m.catName in filter.categories) &&
-                (filter.responsibles.isEmpty() || (m.by != null && m.by in filter.responsibles)) &&
+            (q.isEmpty() || matchesQuery(m, q, categoryName(m))) &&
+                (filter.categories.isEmpty() || categoryName(m) in filter.categories) &&
+                (filter.responsibles.isEmpty() || (m.payer != null && m.payer in filter.responsibles)) &&
                 inPeriod(m.date, filter.period, today)
         }
     }
@@ -48,11 +54,11 @@ object MovementQuery {
             .groupBy { it.date }
             .map { (date, list) -> MovementGroup(DateLabels.groupHeader(date, today), list) }
 
-    private fun matchesQuery(m: Movement, q: String): Boolean =
+    private fun matchesQuery(m: Movement, q: String, catName: String): Boolean =
         m.title.lowercase().contains(q) ||
-            m.catName.lowercase().contains(q) ||
-            m.meta.lowercase().contains(q) ||
-            (m.by?.lowercase()?.contains(q) ?: false)
+            catName.lowercase().contains(q) ||
+            m.note.lowercase().contains(q) ||
+            (m.payer?.lowercase()?.contains(q) ?: false)
 
     private fun inPeriod(date: LocalDate, period: MovementPeriod, today: LocalDate): Boolean = when (period) {
         MovementPeriod.All -> true

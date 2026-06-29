@@ -31,10 +31,10 @@ val presentationModule = module {
     viewModelOf(::SettleViewModel)
     viewModelOf(::ReplenishViewModel)
     viewModelOf(::HistoryViewModel)
-    viewModel { AllMovementsViewModel(get(), get()) }
+    viewModel { AllMovementsViewModel(get(), get(), get()) }
 
     // ViewModels que reciben argumentos de ruta vía parametersOf(...)
     viewModel { (useCase: UseCase) -> CreateSpaceViewModel(useCase, get()) }
-    viewModel { (id: String) -> MovementDetailViewModel(id, get(), get()) }
+    viewModel { (id: String) -> MovementDetailViewModel(id, get(), get(), get()) }
     viewModel { (id: String) -> HistoryDetailViewModel(id, get(), get()) }
 }

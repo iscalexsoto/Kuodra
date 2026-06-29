@@ -2,11 +2,15 @@ package com.arenacun.kuodra.presentation.feature.allmovements
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.arenacun.kuodra.domain.model.Category
+import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.repository.MovementRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
+import com.arenacun.kuodra.domain.repository.SummaryRepository
 import com.arenacun.kuodra.domain.usecase.MovementFilter
 import com.arenacun.kuodra.domain.usecase.MovementPeriod
 import com.arenacun.kuodra.domain.usecase.MovementQuery
+import com.arenacun.kuodra.presentation.feature.movement.toUi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -21,10 +25,14 @@ import java.time.LocalDate
 class AllMovementsViewModel(
     spaceRepository: SpaceRepository,
     movementRepository: MovementRepository,
+    summaryRepository: SummaryRepository,
     private val today: LocalDate = LocalDate.now(),
 ) : ViewModel() {
 
     private val useCase = spaceRepository.activeSpace.value.useCase
+    private val categories: Map<String, Category> = summaryRepository.categories().associateBy { it.id }
+
+    private fun catName(m: Movement): String = (categories[m.categoryId] ?: Category.byId(m.categoryId)).name
 
     private data class Local(
         val filter: MovementFilter = MovementFilter(),
@@ -35,12 +43,12 @@ class AllMovementsViewModel(
     private val local = MutableStateFlow(Local())
 
     val uiState = combine(movementRepository.movements(useCase), local) { movements, l ->
-        val filtered = MovementQuery.filter(movements, l.filter, today)
+        val filtered = MovementQuery.filter(movements, l.filter, today) { catName(it) }
         AllMovementsUiState(
-            groups = MovementQuery.groupByDay(filtered, today),
+            groups = MovementQuery.groupByDay(filtered, today).map { it.toUi(categories, useCase, today) },
             filter = l.filter,
-            allCategories = movements.map { it.catName }.distinct(),
-            allResponsibles = movements.mapNotNull { it.by }.distinct(),
+            allCategories = movements.map { catName(it) }.distinct(),
+            allResponsibles = movements.mapNotNull { it.payer }.distinct(),
             showSearch = l.showSearch,
             showFilter = l.showFilter,
             totalCount = movements.size,

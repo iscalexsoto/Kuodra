@@ -76,4 +76,12 @@ class CalcTest {
         s = Calc.press(s, CalcKey.Dot) // ignorado
         assertEquals("1.5", s.expression)
     }
+
+    @Test
+    fun `parseAmount reverses formatAmount`() {
+        assertEquals(6000.0, Calc.parseAmount("$6,000"))
+        assertEquals(119.80, Calc.parseAmount("$119.80"))
+        assertEquals(-119.80, Calc.parseAmount("−$119.80"))
+        assertNull(Calc.parseAmount("sin monto"))
+    }
 }

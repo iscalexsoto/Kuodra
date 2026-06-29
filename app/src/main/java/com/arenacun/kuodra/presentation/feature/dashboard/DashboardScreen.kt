@@ -33,9 +33,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.AvatarTone
-import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.UseCase
+import com.arenacun.kuodra.presentation.feature.movement.MovementUi
 import com.arenacun.kuodra.presentation.component.CategoryTag
 import com.arenacun.kuodra.presentation.component.Chevron
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
@@ -117,7 +117,7 @@ fun DashboardScreen(
                     UseCase.Personal -> {}
                 }
 
-                DashboardHero(c, uc, t.heroLabel)
+                DashboardHero(c, uc, t.heroLabel, state.personalHero)
 
                 if (uc != UseCase.Personal) {
                     Spacer(Modifier.height(12.dp))
@@ -138,7 +138,10 @@ fun DashboardScreen(
                     PeopleCard(c, state.people)
                 }
 
-                SectionHeader(c, "Movimientos recientes", onSeeAll = onSeeAllMovements)
+                SectionHeader(
+                    c, "Movimientos recientes",
+                    onSeeAll = if (state.movements.isEmpty()) null else onSeeAllMovements,
+                )
                 MovementsCard(c, state.movements, onOpenMovement)
             }
         }
@@ -835,30 +838,51 @@ private fun LowFundBanner(c: KuodraColors, onReplenish: () -> Unit) {
 }
 
 @Composable
-private fun DashboardHero(c: KuodraColors, uc: UseCase, heroLabel: String) {
+private fun DashboardHero(c: KuodraColors, uc: UseCase, heroLabel: String, personalHero: PersonalHero?) {
     Column(
         Modifier.fillMaxWidth().padding(top = 12.dp)
             .clip(Kuodra.shape.xxl).background(c.primary)
             .padding(22.dp),
     ) {
-        if (uc == UseCase.Personal) {
-            Box(
-                Modifier.clip(Kuodra.shape.pill).background(c.primaryInk.copy(alpha = 0.16f))
-                    .padding(horizontal = 12.dp, vertical = 5.dp),
-            ) { Text("Quincenal · 1 y 16", style = Kuodra.type.caption, color = c.primaryInk) }
-            Spacer(Modifier.height(11.dp))
+        if (uc == UseCase.Personal && personalHero != null) {
+            val budget = personalHero.budget
+            if (budget != null) {
+                Box(
+                    Modifier.clip(Kuodra.shape.pill).background(c.primaryInk.copy(alpha = 0.16f))
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                ) { Text(budget.frequencyBadge, style = Kuodra.type.caption, color = c.primaryInk) }
+                Spacer(Modifier.height(11.dp))
+            }
+            Text(personalHero.caption, style = Kuodra.type.caption, color = c.primaryInk.copy(alpha = 0.85f))
+            Text(personalHero.totalLabel, style = Kuodra.type.displayAmount, color = c.primaryInk,
+                modifier = Modifier.padding(top = 6.dp))
+            if (budget != null) {
+                HeroProgress(c, budget.progressLabel, budget.rightLabel, budget.pct)
+                Row(
+                    Modifier.padding(top = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    Box(Modifier.size(7.dp).clip(Kuodra.shape.pill)
+                        .background(if (budget.onTrack) c.pos else c.warn))
+                    Text(budget.paceText, style = Kuodra.type.caption, color = c.primaryInk)
+                    Text(budget.paceDetail, style = Kuodra.type.overline, color = c.primaryInk.copy(alpha = 0.82f))
+                }
+            }
+            return@Column
         }
+
+        // Gastos / Caja (aún hardcodeado; fuera de alcance de esta versión)
         Text(heroLabel, style = Kuodra.type.caption, color = c.primaryInk.copy(alpha = 0.85f))
         Text(
             when (uc) {
                 UseCase.Gastos -> "+$890"
                 UseCase.Caja -> "$900"
-                UseCase.Personal -> "$980"
+                UseCase.Personal -> "$0"
             },
             style = Kuodra.type.displayAmount, color = c.primaryInk,
             modifier = Modifier.padding(top = 6.dp),
         )
-
         when (uc) {
             UseCase.Gastos -> {
                 Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -867,19 +891,7 @@ private fun DashboardHero(c: KuodraColors, uc: UseCase, heroLabel: String) {
                 }
             }
             UseCase.Caja -> HeroProgress(c, "$900 disponibles de $5,000", "18%", 0.18f)
-            UseCase.Personal -> {
-                HeroProgress(c, "$980 de $6,000 presupuesto", "16%", 0.16f)
-                Row(
-                    Modifier.padding(top = 13.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(9.dp),
-                ) {
-                    Box(Modifier.size(7.dp).clip(Kuodra.shape.pill).background(c.pos))
-                    Text("Vas a buen ritmo", style = Kuodra.type.caption, color = c.primaryInk)
-                    Text("16% del presupuesto · 33% del periodo",
-                        style = Kuodra.type.overline, color = c.primaryInk.copy(alpha = 0.82f))
-                }
-            }
+            UseCase.Personal -> {}
         }
     }
 }
@@ -962,11 +974,15 @@ private fun PeopleCard(c: KuodraColors, people: List<Person>) {
 }
 
 @Composable
-private fun CategoriesCard(c: KuodraColors, categories: List<Category>) {
+private fun CategoriesCard(c: KuodraColors, categories: List<CategoryBreakdown>) {
     Column(
         Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface)
             .border(1.dp, c.line, Kuodra.shape.xl),
     ) {
+        if (categories.isEmpty()) {
+            EmptyRow(c, "Aún no hay gastos", "El desglose por categoría aparecerá al registrar gastos.")
+            return@Column
+        }
         categories.forEachIndexed { i, cat ->
             Column(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp)) {
                 Row(
@@ -996,13 +1012,17 @@ private fun CategoriesCard(c: KuodraColors, categories: List<Category>) {
 @Composable
 private fun MovementsCard(
     c: KuodraColors,
-    movements: List<com.arenacun.kuodra.domain.model.Movement>,
+    movements: List<MovementUi>,
     onOpenMovement: (String) -> Unit,
 ) {
     Column(
         Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface)
             .border(1.dp, c.line, Kuodra.shape.xl),
     ) {
+        if (movements.isEmpty()) {
+            EmptyRow(c, "Sin movimientos", "Toca Agregar para registrar tu primer gasto.")
+            return@Column
+        }
         movements.forEachIndexed { i, m ->
             Row(
                 Modifier.fillMaxWidth().clickable { onOpenMovement(m.id) }
@@ -1027,6 +1047,15 @@ private fun MovementsCard(
 @Composable
 private fun Divider(c: KuodraColors) {
     Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
+}
+
+/** Estado vacío dentro de una tarjeta: título + ayuda. */
+@Composable
+private fun EmptyRow(c: KuodraColors, title: String, hint: String) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp)) {
+        Text(title, style = Kuodra.type.body, color = c.ink2)
+        Text(hint, style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(top = 3.dp))
+    }
 }
 
 /** Color de la tinta del tono (para barras de categoría). */

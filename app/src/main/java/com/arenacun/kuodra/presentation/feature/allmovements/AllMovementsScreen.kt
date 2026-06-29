@@ -33,10 +33,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.arenacun.kuodra.domain.model.Movement
-import com.arenacun.kuodra.domain.model.toneForName
-import com.arenacun.kuodra.domain.usecase.MovementGroup
 import com.arenacun.kuodra.domain.usecase.MovementPeriod
+import com.arenacun.kuodra.presentation.feature.movement.MovementGroupUi
+import com.arenacun.kuodra.presentation.feature.movement.MovementUi
 import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.component.CategoryTag
 import com.arenacun.kuodra.presentation.component.Chevron
@@ -117,7 +116,7 @@ fun AllMovementsScreen(
 }
 
 @Composable
-private fun GroupSection(c: KuodraColors, group: MovementGroup, onOpenMovement: (String) -> Unit) {
+private fun GroupSection(c: KuodraColors, group: MovementGroupUi, onOpenMovement: (String) -> Unit) {
     Text(group.header.uppercase(), style = Kuodra.type.overline, color = c.ink3,
         modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 10.dp))
     Column(
@@ -132,7 +131,7 @@ private fun GroupSection(c: KuodraColors, group: MovementGroup, onOpenMovement: 
 }
 
 @Composable
-private fun MovementRow(c: KuodraColors, m: Movement, onClick: () -> Unit) {
+private fun MovementRow(c: KuodraColors, m: MovementUi, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 15.dp, vertical = 13.dp),
         horizontalArrangement = Arrangement.spacedBy(13.dp),
@@ -164,7 +163,7 @@ private fun QuickChip(c: KuodraColors, label: String, selected: Boolean, onClick
 private fun SearchOverlay(
     c: KuodraColors,
     query: String,
-    groups: List<MovementGroup>,
+    groups: List<MovementGroupUi>,
     onQuery: (String) -> Unit,
     onClose: () -> Unit,
     onOpenMovement: (String) -> Unit,

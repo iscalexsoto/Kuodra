@@ -30,6 +30,9 @@ class SessionStore(
     /** Token crudo para adjuntar en el header `Authorization`, o `null` si no hay sesión. */
     suspend fun token(): String? = dataStore.data.map { it[TOKEN] }.first()
 
+    /** Id del usuario en sesión, o `null`. Sella el `owner` de los registros locales (Room). */
+    suspend fun userId(): String? = dataStore.data.map { it[USER_ID] }.first()
+
     suspend fun save(token: String, userId: String, email: String, name: String) {
         dataStore.edit {
             it[TOKEN] = token

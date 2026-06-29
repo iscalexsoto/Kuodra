@@ -2,6 +2,7 @@ package com.arenacun.kuodra.data.repository
 
 import com.arenacun.kuodra.data.local.SessionStore
 import com.arenacun.kuodra.data.remote.AuthApi
+import com.arenacun.kuodra.data.sync.SyncTrigger
 import com.arenacun.kuodra.domain.model.Session
 import com.arenacun.kuodra.domain.repository.AuthRepository
 import io.ktor.client.plugins.ClientRequestException
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.stateIn
 class AuthRepositoryImpl(
     private val authApi: AuthApi,
     private val sessionStore: SessionStore,
+    private val syncTrigger: SyncTrigger = SyncTrigger.NoOp,
 ) : AuthRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -48,6 +50,7 @@ class AuthRepositoryImpl(
         val auth = authApi.authWithOtp(otpId, code.trim())
         sessionStore.save(auth.token, auth.record.id, auth.record.email, auth.record.name)
         pendingOtpId = null
+        syncTrigger.requestSync() // trae el respaldo del usuario tras iniciar sesión
     }
 
     override suspend fun restoreSession(): Session? {
@@ -56,6 +59,7 @@ class AuthRepositoryImpl(
         return try {
             val auth = authApi.authRefresh(token)
             sessionStore.save(auth.token, auth.record.id, auth.record.email, auth.record.name)
+            syncTrigger.requestSync() // sincroniza al reabrir con sesión válida
             Session(auth.record.id, auth.record.email, auth.record.name)
         } catch (_: ClientRequestException) {
             // 4xx (token inválido/expirado): forzamos re-login.

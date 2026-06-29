@@ -28,13 +28,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.AvatarTone
+import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.DateLabels
-import com.arenacun.kuodra.domain.model.MovementCategory
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.presentation.component.BackCircle
+import com.arenacun.kuodra.presentation.component.CategoryEditSheet
 import com.arenacun.kuodra.presentation.component.CategoryTag
 import com.arenacun.kuodra.presentation.component.Chevron
+import com.arenacun.kuodra.presentation.component.PlusIcon
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
 import com.arenacun.kuodra.presentation.component.KuodraCalculator
 import com.arenacun.kuodra.presentation.component.KuodraCalendar
@@ -219,7 +221,24 @@ fun AddMovementScreen(
     }
     when (state.sheet) {
         AddSheet.Category -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            CategorySheet(c, state.categories, state.category) { viewModel.onPickCategory(it) }
+            val draft = state.editingCategory
+            if (draft != null) {
+                CategoryEditSheet(
+                    c = c,
+                    draft = draft,
+                    onName = viewModel::onCategoryDraftName,
+                    onTone = viewModel::onCategoryDraftTone,
+                    onConfirm = viewModel::onConfirmCreateCategory,
+                )
+            } else {
+                CategorySheet(
+                    c = c,
+                    categories = state.categories,
+                    selected = state.category,
+                    onPick = viewModel::onPickCategory,
+                    onCreate = viewModel::onStartCreateCategory,
+                )
+            }
         }
         AddSheet.Payer -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             PickerSheet(c, t.paidLabel.ifBlank { "¿Quién pagó?" }, state.members, state.payer) { viewModel.onPickPayer(it) }
@@ -281,15 +300,16 @@ private fun FieldRow(
 @Composable
 private fun CategorySheet(
     c: KuodraColors,
-    categories: List<MovementCategory>,
-    selected: MovementCategory,
-    onPick: (MovementCategory) -> Unit,
+    categories: List<Category>,
+    selected: Category,
+    onPick: (Category) -> Unit,
+    onCreate: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
         Text("Categoría", style = Kuodra.type.heading, color = c.ink,
             modifier = Modifier.padding(bottom = 8.dp))
         categories.forEach { cat ->
-            val isSel = cat.name == selected.name
+            val isSel = cat.id == selected.id
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(Kuodra.shape.lg)
                     .background(if (isSel) c.tint else c.surface)
@@ -302,6 +322,19 @@ private fun CategorySheet(
                 Text(cat.name, style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
                 if (isSel) Chevron(8.dp, c.primary, degrees = 0f)
             }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(Kuodra.shape.lg)
+                .border(1.dp, c.line, Kuodra.shape.lg)
+                .clickable(onClick = onCreate).padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(34.dp).clip(Kuodra.shape.md).background(c.surface2),
+                contentAlignment = Alignment.Center) {
+                PlusIcon(15.dp, c.primary, thickness = 2.5.dp)
+            }
+            Text("Crear categoría", style = Kuodra.type.body, color = c.primary, modifier = Modifier.weight(1f))
         }
     }
 }

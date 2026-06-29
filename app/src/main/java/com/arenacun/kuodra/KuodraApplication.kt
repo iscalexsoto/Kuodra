@@ -1,6 +1,7 @@
 package com.arenacun.kuodra
 
 import android.app.Application
+import com.arenacun.kuodra.data.sync.WorkManagerSyncTrigger
 import com.arenacun.kuodra.di.appModule
 import com.arenacun.kuodra.di.dataModule
 import com.arenacun.kuodra.di.networkModule
@@ -19,11 +20,13 @@ class KuodraApplication : Application() {
         // La CrashActivity corre en el proceso ":crash"; ahí no necesitamos Koin (la pantalla
         // de crash no lo usa) y reinicializarlo solo añadiría puntos de fallo.
         if (getProcessName() != "$packageName:crash") {
-            startKoin {
+            val koin = startKoin {
                 androidLogger()
                 androidContext(this@KuodraApplication)
                 modules(appModule, networkModule, dataModule, presentationModule)
-            }
+            }.koin
+            // Sincronización periódica de respaldo (la sesión se valida dentro del worker).
+            koin.get<WorkManagerSyncTrigger>().schedulePeriodic()
         }
     }
 }

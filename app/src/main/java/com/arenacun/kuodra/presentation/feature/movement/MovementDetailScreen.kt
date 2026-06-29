@@ -24,7 +24,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.arenacun.kuodra.domain.model.splitShares
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.component.CategoryTag
@@ -63,6 +62,7 @@ fun MovementDetailScreen(
             Text("Detalle del movimiento", style = Kuodra.type.heading, color = c.ink)
         }
 
+        if (state.loading) return@Column
         if (m == null) {
             Text("Movimiento no encontrado", style = Kuodra.type.body, color = c.ink2)
             return@Column
@@ -93,7 +93,7 @@ fun MovementDetailScreen(
 
         // meta
         val hasBy = m.by != null
-        val splits = m.splitShares()
+        val splits = m.splitShares
         val hasNote = m.note.isNotBlank()
         if (hasBy || splits.isNotEmpty() || hasNote) {
             Column(

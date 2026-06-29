@@ -144,6 +144,10 @@ object Calc {
         return (if (negative) "-$" else "$") + body
     }
 
+    /** Inverso de [formatAmount]: lee un monto formateado ("$6,000", "−$119.80") a número. */
+    fun parseAmount(text: String): Double? =
+        text.replace("$", "").replace(",", "").replace("−", "-").trim().toDoubleOrNull()
+
     private fun roundTo2(value: Double): Double = (value * 100).roundToLong() / 100.0
 
     private fun groupThousands(n: Long): String {

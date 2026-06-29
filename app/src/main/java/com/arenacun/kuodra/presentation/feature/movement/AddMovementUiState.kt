@@ -2,7 +2,8 @@ package com.arenacun.kuodra.presentation.feature.movement
 
 import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.CalcState
-import com.arenacun.kuodra.domain.model.MovementCategory
+import com.arenacun.kuodra.domain.model.Category
+import com.arenacun.kuodra.presentation.component.CategoryDraft
 import java.time.LocalDate
 
 /** Hoja inferior abierta en el alta (categoría / pagador / dividir). */
@@ -21,14 +22,16 @@ data class AddMovementUiState(
     val amount: Double? = null,
     /** Estado de trabajo de la calculadora mientras el diálogo está abierto. */
     val calc: CalcState = CalcState(),
-    val category: MovementCategory = MovementCategory.defaults.first(),
-    val categories: List<MovementCategory> = MovementCategory.defaults,
+    val category: Category = Category.Uncategorized,
+    val categories: List<Category> = listOf(Category.Uncategorized),
     val payer: String = "Tú",
     /** Personas seleccionadas para dividir (gastos). */
     val splitNames: List<String> = emptyList(),
     /** Candidatos del espacio (para pagador y dividir). */
     val members: List<String> = emptyList(),
     val sheet: AddSheet? = null,
+    /** Borrador de nueva categoría dentro del selector (null = no se está creando). */
+    val editingCategory: CategoryDraft? = null,
     val showCalculator: Boolean = false,
     val showCalendar: Boolean = false,
 ) {

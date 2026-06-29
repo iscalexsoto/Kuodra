@@ -3,8 +3,8 @@ package com.arenacun.kuodra.data.local
 import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.BudgetFrequency
-import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.FundConfig
+import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.SettlementLine
@@ -18,9 +18,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Única fuente de datos en memoria del prototipo (reemplaza el seed que vivía en
- * `KuodraModel.kt` y el estado mutable global). Cuando lleguen Room/Retrofit, esta
- * clase queda detrás de `data/local` y los repositorios combinan local + remoto sin
- * tocar contratos ni UI.
+ * `KuodraModel.kt` y el estado mutable global). Cuando lleguen Room/Ktor, esta clase queda detrás
+ * de `data/local` y los repositorios combinan local + remoto sin tocar contratos ni UI.
  */
 class KuodraSeedSource {
 
@@ -44,32 +43,29 @@ class KuodraSeedSource {
     /** Movimientos semilla por caso de uso (allMovements del prototipo). */
     fun baseMovements(useCase: UseCase): List<Movement> = when (useCase) {
         UseCase.Personal -> listOf(
-            Movement("p1", "Súper de la semana", "OXXO · hoy", "$340", "Sú", "Súper", AvatarTone.Tint,
-                "Hoy · 20 jun 2026", note = "OXXO Roma Norte", date = LocalDate.of(2026, 6, 20)),
-            Movement("p2", "Comida con Sam", "Restaurantes · ayer", "$420", "Re", "Restaurantes", AvatarTone.Pos,
-                "Ayer · 19 jun 2026", date = LocalDate.of(2026, 6, 19)),
-            Movement("p3", "Uber al centro", "Transporte · 2 jun", "$118", "Tr", "Transporte", AvatarTone.Warn,
-                "2 jun 2026", date = LocalDate.of(2026, 6, 2)),
+            Movement("p1", money(340.0), "super", "Súper de la semana",
+                note = "OXXO Roma Norte", date = LocalDate.of(2026, 6, 20)),
+            Movement("p2", money(420.0), "restaurantes", "Comida con Sam",
+                date = LocalDate.of(2026, 6, 19)),
+            Movement("p3", money(118.0), "transporte", "Uber al centro",
+                date = LocalDate.of(2026, 6, 2)),
         )
         UseCase.Gastos -> listOf(
-            Movement("g1", "Renta de junio", "Pagó Andrea · 1 jun", "$8,000", "Rn", "Renta", AvatarTone.Tint,
-                "1 jun 2026", by = "Andrea", byVerb = "Pagó", splitNames = SPLIT5, perHead = "$1,600",
-                date = LocalDate.of(2026, 6, 1)),
-            Movement("g2", "Súper de la semana", "Pagaste tú · 3 jun", "$1,240", "Sú", "Súper", AvatarTone.Pos,
-                "3 jun 2026", by = "Tú", byVerb = "Pagaste", splitNames = SPLIT5, perHead = "$248",
-                note = "Despensa quincenal", date = LocalDate.of(2026, 6, 3)),
-            Movement("g3", "Internet", "Pagó Beto · 5 jun", "$599", "Se", "Servicios", AvatarTone.Warn,
-                "5 jun 2026", by = "Beto", byVerb = "Pagó", splitNames = SPLIT5, perHead = "$119.80",
-                date = LocalDate.of(2026, 6, 5)),
+            Movement("g1", money(8_000.0), "renta", "Renta de junio",
+                date = LocalDate.of(2026, 6, 1), payer = "Andrea", splitNames = SPLIT5),
+            Movement("g2", money(1_240.0), "super", "Súper de la semana",
+                note = "Despensa quincenal", date = LocalDate.of(2026, 6, 3),
+                payer = "Tú", splitNames = SPLIT5),
+            Movement("g3", money(599.0), "servicios", "Internet",
+                date = LocalDate.of(2026, 6, 5), payer = "Beto", splitNames = SPLIT5),
         )
         UseCase.Caja -> listOf(
-            Movement("c1", "Papelería Office Depot", "Reportó Luis · hoy", "$340", "Pa", "Papelería", AvatarTone.Tint,
-                "Hoy · 20 jun 2026", by = "Luis", byVerb = "Reportó", note = "Hojas y tóner",
-                date = LocalDate.of(2026, 6, 20)),
-            Movement("c2", "Gasolina reparto", "Reportó Mar · ayer", "$500", "Tr", "Transporte", AvatarTone.Pos,
-                "Ayer · 19 jun 2026", by = "Mar", byVerb = "Reportó", date = LocalDate.of(2026, 6, 19)),
-            Movement("c3", "Café para junta", "Reportaste tú · ayer", "$180", "Ot", "Otro", AvatarTone.Warn,
-                "Ayer · 19 jun 2026", by = "Tú", byVerb = "Reportaste", date = LocalDate.of(2026, 6, 19)),
+            Movement("c1", money(340.0), "papeleria", "Papelería Office Depot",
+                note = "Hojas y tóner", date = LocalDate.of(2026, 6, 20), payer = "Luis"),
+            Movement("c2", money(500.0), "transporte", "Gasolina reparto",
+                date = LocalDate.of(2026, 6, 19), payer = "Mar"),
+            Movement("c3", money(180.0), "otro", "Café para junta",
+                date = LocalDate.of(2026, 6, 19), payer = "Tú"),
         )
     }
 
@@ -89,20 +85,13 @@ class KuodraSeedSource {
         UseCase.Personal -> emptyList()
     }
 
-    /** Categorías del dashboard personal (catBreakdown). */
-    val categories: List<Category> = listOf(
-        Category("Súper", "6 movimientos", "$1,840", 0.46f, "Sú", AvatarTone.Tint),
-        Category("Restaurantes", "5 movimientos", "$1,210", 0.30f, "Re", AvatarTone.Pos),
-        Category("Transporte", "4 movimientos", "$980", 0.24f, "Tr", AvatarTone.Warn),
-    )
-
     /** Ajustes semilla por caso de uso (scrGroupSettings / scrPersonalSettings / scrCajaSettings). */
     fun settings(useCase: UseCase): SpaceSettings = when (useCase) {
         UseCase.Personal -> SpaceSettings(
             name = "Mis gastos",
             members = emptyList(),
             budget = BudgetConfig(
-                enabled = true,
+                enabled = false,
                 frequency = BudgetFrequency.Biweekly,
                 amount = "$6,000",
                 firstDay = 1,
@@ -185,5 +174,6 @@ class KuodraSeedSource {
 
     private companion object {
         val SPLIT5 = listOf("Tú", "Andrea", "Caro", "Beto", "Diego")
+        fun money(value: Double): Money = Money.ofMajor(value)
     }
 }

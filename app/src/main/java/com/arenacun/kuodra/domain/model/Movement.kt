@@ -2,26 +2,25 @@ package com.arenacun.kuodra.domain.model
 
 import java.time.LocalDate
 
+/**
+ * Movimiento (gasto/ingreso). Modelo **data-shaped**, persistible y sincronizable: el monto es
+ * numérico ([Money]) y la categoría es una **referencia** ([categoryId]). Los textos de
+ * presentación (monto con formato, meta, fecha legible, perHead, verbo) NO se guardan: se derivan
+ * en la capa de presentación (`MovementUi`).
+ */
 data class Movement(
     val id: String,
+    val amount: Money,
+    val categoryId: String,
     val title: String,
-    val meta: String,
-    val amount: String,
-    val catTag: String,
-    val catName: String,
-    val tone: AvatarTone,
-    val dateStr: String,
-    val by: String? = null,        // quién pagó/reportó
-    val byVerb: String? = null,    // "Pagó" / "Reportó" / "Pagaste"
-    val splitNames: List<String> = emptyList(),
-    val perHead: String? = null,
     val note: String = "",
-    /** Fecha real del movimiento (para agrupar/filtrar en "Ver todo"). */
+    /** Fecha real del movimiento (para agrupar/filtrar y para los periodos de presupuesto). */
     val date: LocalDate = LocalDate.now(),
+    /** Quién pagó/reportó (Gastos/Caja); null en Personal. */
+    val payer: String? = null,
+    /** Personas entre las que se divide el gasto (Gastos). */
+    val splitNames: List<String> = emptyList(),
 )
-
-/** Reparto de un movimiento dividido entre varias personas. */
-data class SplitShare(val name: String, val initials: String, val share: String, val tone: AvatarTone)
 
 /** Inicial(es) a partir de un nombre. */
 fun initialsOf(name: String): String = name.trim().take(1).uppercase()
@@ -35,9 +34,3 @@ fun toneForName(name: String): AvatarTone = when (name) {
     "Beto" -> AvatarTone.Neg
     else -> AvatarTone.Tint
 }
-
-/** Derivación pura: repartos de un movimiento dividido. */
-fun Movement.splitShares(): List<SplitShare> =
-    splitNames.map { name ->
-        SplitShare(name, if (name == "Tú") "T" else name.take(1), perHead ?: "", toneForName(name))
-    }

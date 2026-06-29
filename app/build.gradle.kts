@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 // URL de la instancia PocketBase. Se lee de `local.properties` (clave `pocketbase.url`,
@@ -74,6 +75,14 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.ktor.client.logging)
     implementation(libs.androidx.datastore.preferences)
+
+    // Persistencia local estructurada (Room → fuente de verdad offline)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
+    // Sincronización en segundo plano (push/pull diferido y con restricción de red)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // Inyección de dependencias (Koin)
     implementation(platform(libs.koin.bom))

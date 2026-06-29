@@ -1,13 +1,16 @@
 package com.arenacun.kuodra.presentation.feature.dashboard
 
 import com.arenacun.kuodra.MainDispatcherRule
-import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.Category
+import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.Person
+import com.arenacun.kuodra.domain.model.SettlementRecord
 import com.arenacun.kuodra.domain.model.Space
+import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.repository.MovementRepository
+import com.arenacun.kuodra.domain.repository.SettingsRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -30,7 +33,7 @@ class DashboardViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private fun movement(id: String) =
-        Movement(id, id, "meta", "$10", "Ca", "Cat", AvatarTone.Tint, "hoy")
+        Movement(id, Money.ofMajor(10.0), "otro", id)
 
     private class FakeSpaceRepository : SpaceRepository {
         override val activeSpace: StateFlow<Space> = MutableStateFlow(Space(UseCase.Gastos))
@@ -42,14 +45,27 @@ class DashboardViewModelTest {
     private class FakeMovementRepository(initial: List<Movement>) : MovementRepository {
         private val movements = MutableStateFlow(initial)
         override fun movements(useCase: UseCase): Flow<List<Movement>> = movements.asStateFlow()
-        override fun movement(useCase: UseCase, id: String): Movement? = movements.value.find { it.id == id }
-        override fun delete(id: String) = movements.update { list -> list.filterNot { it.id == id } }
-        override fun add(useCase: UseCase, movement: Movement) = movements.update { it + movement }
+        override suspend fun movement(useCase: UseCase, id: String): Movement? = movements.value.find { it.id == id }
+        override suspend fun add(useCase: UseCase, movement: Movement) { movements.update { it + movement } }
+        override suspend fun update(useCase: UseCase, movement: Movement) {
+            movements.update { list -> list.map { if (it.id == movement.id) movement else it } }
+        }
+        override suspend fun delete(useCase: UseCase, id: String) {
+            movements.update { list -> list.filterNot { it.id == id } }
+        }
     }
 
     private class FakeSummaryRepository : SummaryRepository {
         override fun people(useCase: UseCase): List<Person> = emptyList()
         override fun categories(): List<Category> = emptyList()
+    }
+
+    private class FakeSettingsRepository : SettingsRepository {
+        override fun settings(useCase: UseCase): StateFlow<SpaceSettings> =
+            MutableStateFlow(SpaceSettings(name = "", members = emptyList(), budget = null, fund = null, reminderEnabled = false))
+        override fun update(useCase: UseCase, settings: SpaceSettings) = Unit
+        override fun history(useCase: UseCase): List<SettlementRecord> = emptyList()
+        override fun historyEntry(useCase: UseCase, id: String): SettlementRecord? = null
     }
 
     @Test
@@ -59,6 +75,7 @@ class DashboardViewModelTest {
             spaceRepository = FakeSpaceRepository(),
             movementRepository = movementRepository,
             summaryRepository = FakeSummaryRepository(),
+            settingsRepository = FakeSettingsRepository(),
         )
 
         // Activa la suscripción (SharingStarted.WhileSubscribed).
@@ -66,7 +83,7 @@ class DashboardViewModelTest {
         advanceUntilIdle()
         assertEquals(2, viewModel.uiState.value.movements.size)
 
-        movementRepository.delete("a")
+        movementRepository.delete(UseCase.Gastos, "a")
         advanceUntilIdle()
 
         assertEquals(listOf("b"), viewModel.uiState.value.movements.map { it.id })
@@ -79,6 +96,7 @@ class DashboardViewModelTest {
             spaceRepository = FakeSpaceRepository(),
             movementRepository = FakeMovementRepository(emptyList()),
             summaryRepository = FakeSummaryRepository(),
+            settingsRepository = FakeSettingsRepository(),
         )
 
         viewModel.onOpenMenu()

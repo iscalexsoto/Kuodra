@@ -9,6 +9,7 @@ import io.ktor.client.plugins.logging.Logging
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.url
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
@@ -34,6 +35,10 @@ class PocketBaseClient(
     /** URL absoluta de una colección de la API de records. */
     fun collectionUrl(path: String): String =
         "${baseUrl.trimEnd('/')}/api/collections/users/$path"
+
+    /** URL base de records de una colección arbitraria (movements, categories, …). */
+    fun records(collection: String): String =
+        "${baseUrl.trimEnd('/')}/api/collections/$collection/records"
 }
 
 /** Header de autenticación de PocketBase: el token se envía crudo en `Authorization`. */
@@ -44,4 +49,14 @@ fun HttpRequestBuilder.pocketBaseAuth(token: String) {
 /** Helper para fijar `Content-Type: application/json` en las peticiones con cuerpo. */
 fun HttpRequestBuilder.jsonBody() {
     contentType(ContentType.Application.Json)
+}
+
+/** Parámetros de listado de records: paginación, orden por `updated` y filtro de deltas. */
+fun HttpRequestBuilder.pbListParams(since: String, page: Int) {
+    url {
+        parameters.append("perPage", "200")
+        parameters.append("sort", "updated")
+        parameters.append("page", page.toString())
+        if (since.isNotEmpty()) parameters.append("filter", "updated > \"$since\"")
+    }
 }
