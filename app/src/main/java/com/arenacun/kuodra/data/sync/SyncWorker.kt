@@ -1,6 +1,7 @@
 package com.arenacun.kuodra.data.sync
 
 import android.content.Context
+import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import org.koin.core.component.KoinComponent
@@ -20,6 +21,9 @@ class SyncWorker(
     override suspend fun doWork(): Result =
         syncManager.sync().fold(
             onSuccess = { Result.success() },
-            onFailure = { Result.retry() },
+            onFailure = {
+                Log.w("KuodraSync", "Sincronización fallida; se reintentará", it)
+                Result.retry()
+            },
         )
 }

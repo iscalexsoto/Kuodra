@@ -38,7 +38,38 @@ y usa `updated` como cursor/LWW).
 
 > La categoría estática "Sin categoría" vive solo en el cliente; **no** se sube ni se crea aquí.
 
-## API rules (en ambas colecciones)
+## Colección `budgets` (tipo: Base)
+
+Una fila por usuario; el **id del registro es el `owner`** (el cliente lo crea con ese id).
+
+| Campo            | Tipo     | Notas                                    |
+|------------------|----------|------------------------------------------|
+| `owner`          | relation → `users` (single, required)    | id del registro = este valor. |
+| `enabled`        | bool     |                                          |
+| `frequency`      | text     | Nombre del enum (`Weekly`/`Biweekly`/…). |
+| `amount`         | number   | Monto límite en **centavos**.            |
+| `weekday`        | number   |                                          |
+| `firstDay`       | number   |                                          |
+| `secondDay`      | number   |                                          |
+| `monthlyDay`     | number   |                                          |
+| `customInterval` | number   |                                          |
+| `deleted`        | bool     |                                          |
+
+## Colección `period_snapshots` (tipo: Base)
+
+| Campo          | Tipo   | Notas                                              |
+|----------------|--------|----------------------------------------------------|
+| `owner`        | relation → `users` (single, required)              | |
+| `title`        | text   |                                                    |
+| `periodStart`  | text   | ISO `yyyy-MM-dd`.                                   |
+| `periodEnd`    | text   | ISO `yyyy-MM-dd`.                                   |
+| `totalSpent`   | number | Centavos.                                          |
+| `budgetAmount` | number | Centavos; opcional (vacío si no había presupuesto).|
+| `lines`        | json   | `[{categoryName,count,amount(centavos),tone}]`.    |
+| `createdAt`    | number | epoch millis.                                      |
+| `deleted`      | bool   |                                                    |
+
+## API rules (en TODAS las colecciones de datos)
 
 Aislamiento multi-tenant por usuario. En List, View, Create, Update y Delete:
 

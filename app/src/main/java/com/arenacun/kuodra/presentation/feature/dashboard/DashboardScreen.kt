@@ -204,7 +204,7 @@ fun DashboardScreen(
             ShareDoneSheet(c, uc, onClose = viewModel::onCloseSheet)
         }
         DashboardSheet.PCloseConfirm -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            ClosePeriodSheet(c, onClose = viewModel::onCloseSheet, onConfirm = viewModel::onClosePeriodConfirm)
+            ClosePeriodSheet(c, state.personalHero, onClose = viewModel::onCloseSheet, onConfirm = viewModel::onClosePeriodConfirm)
         }
         DashboardSheet.PClosed -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             ClosePeriodDoneSheet(c, onClose = viewModel::onCloseSheet)
@@ -616,20 +616,21 @@ private fun ShareDoneSheet(c: KuodraColors, current: UseCase, onClose: () -> Uni
 
 /** Cerrar periodo (Personal): confirmación con resumen del periodo. */
 @Composable
-private fun ClosePeriodSheet(c: KuodraColors, onClose: () -> Unit, onConfirm: () -> Unit) {
+private fun ClosePeriodSheet(c: KuodraColors, hero: PersonalHero?, onClose: () -> Unit, onConfirm: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
         SheetHeader(c, "Cerrar periodo", onClose)
         Column(Modifier.padding(horizontal = 20.dp)) {
             Column(Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface2).padding(17.dp)) {
                 Text("Periodo actual", style = Kuodra.type.caption, color = c.ink3)
-                Text("Quincena 2 · 16–30 jun", style = Kuodra.type.heading, color = c.ink,
+                Text(hero?.budget?.frequencyBadge ?: hero?.caption ?: "Mes en curso",
+                    style = Kuodra.type.heading, color = c.ink,
                     modifier = Modifier.padding(top = 4.dp))
                 Row(
                     Modifier.padding(top = 10.dp),
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("$980", style = Kuodra.type.titleScreen, color = c.ink)
+                    Text(hero?.totalLabel ?: "$0", style = Kuodra.type.titleScreen, color = c.ink)
                     Text("gastado", style = Kuodra.type.caption, color = c.ink3,
                         modifier = Modifier.padding(bottom = 4.dp))
                 }

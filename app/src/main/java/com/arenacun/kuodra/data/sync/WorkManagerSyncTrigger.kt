@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
 class WorkManagerSyncTrigger(private val context: Context) : SyncTrigger {
 
     override fun requestSync() {
+        android.util.Log.d("KuodraSync", "requestSync()")
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setConstraints(networkConstraints())
             .setInitialDelay(DEBOUNCE_SECONDS, TimeUnit.SECONDS)

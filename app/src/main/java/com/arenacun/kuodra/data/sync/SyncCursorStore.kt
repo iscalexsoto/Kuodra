@@ -20,5 +20,21 @@ class SyncCursorStore(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[key(collection)] = value }
     }
 
-    private fun key(collection: String) = stringPreferencesKey("cursor_$collection")
+    /**
+     * Borra todos los cursores ⇒ el siguiente pull trae todo desde cero. Se llama cuando Room se
+     * recrea de forma destructiva, para que datos locales y cursores no queden desincronizados.
+     */
+    suspend fun clear() {
+        dataStore.edit { prefs ->
+            prefs.asMap().keys.toList()
+                .filter { it.name.startsWith(PREFIX) }
+                .forEach { prefs.remove(it) }
+        }
+    }
+
+    private fun key(collection: String) = stringPreferencesKey("$PREFIX$collection")
+
+    private companion object {
+        const val PREFIX = "cursor_"
+    }
 }

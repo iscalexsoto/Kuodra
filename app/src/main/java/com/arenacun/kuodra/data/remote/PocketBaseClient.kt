@@ -25,7 +25,12 @@ class PocketBaseClient(
     val http: HttpClient = HttpClient(OkHttp) {
         expectSuccess = true
         install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
+            json(Json {
+                ignoreUnknownKeys = true
+                // PocketBase devuelve null en campos json/opcionales vacíos (p. ej. splitNames);
+                // coerce convierte ese null al valor por defecto de la propiedad (lista vacía, etc.).
+                coerceInputValues = true
+            })
         }
         install(Logging) {
             level = if (BuildConfig.DEBUG) LogLevel.INFO else LogLevel.NONE

@@ -4,6 +4,7 @@ import com.arenacun.kuodra.MainDispatcherRule
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
+import com.arenacun.kuodra.domain.model.PeriodSnapshot
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.SettlementRecord
 import com.arenacun.kuodra.domain.model.Space
@@ -11,6 +12,7 @@ import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.repository.MovementRepository
 import com.arenacun.kuodra.domain.repository.SettingsRepository
+import com.arenacun.kuodra.domain.repository.SnapshotRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -68,6 +70,11 @@ class DashboardViewModelTest {
         override fun historyEntry(useCase: UseCase, id: String): SettlementRecord? = null
     }
 
+    private class FakeSnapshotRepository : SnapshotRepository {
+        override val snapshots: StateFlow<List<PeriodSnapshot>> = MutableStateFlow(emptyList())
+        override suspend fun add(snapshot: PeriodSnapshot) = Unit
+    }
+
     @Test
     fun `deleting a movement removes it from the dashboard state`() = runTest {
         val movementRepository = FakeMovementRepository(listOf(movement("a"), movement("b")))
@@ -76,6 +83,7 @@ class DashboardViewModelTest {
             movementRepository = movementRepository,
             summaryRepository = FakeSummaryRepository(),
             settingsRepository = FakeSettingsRepository(),
+            snapshotRepository = FakeSnapshotRepository(),
         )
 
         // Activa la suscripción (SharingStarted.WhileSubscribed).
@@ -97,6 +105,7 @@ class DashboardViewModelTest {
             movementRepository = FakeMovementRepository(emptyList()),
             summaryRepository = FakeSummaryRepository(),
             settingsRepository = FakeSettingsRepository(),
+            snapshotRepository = FakeSnapshotRepository(),
         )
 
         viewModel.onOpenMenu()
@@ -110,6 +119,7 @@ class DashboardViewModelTest {
         viewModel.onClosePeriod()
         assertEquals(DashboardSheet.PCloseConfirm, viewModel.overlay.value.sheet)
         viewModel.onClosePeriodConfirm()
+        advanceUntilIdle()
         assertEquals(DashboardSheet.PClosed, viewModel.overlay.value.sheet)
 
         viewModel.onCloseSheet()

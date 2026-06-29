@@ -25,7 +25,18 @@ data class BudgetConfig(
     val monthlyDay: Int = 1,
     /** Personalizado: cierra el periodo cada N días. */
     val customInterval: Int = 15,
-)
+) {
+    companion object {
+        /** Presupuesto por defecto (apagado) de un usuario nuevo. */
+        val Default = BudgetConfig(
+            enabled = false,
+            frequency = BudgetFrequency.Biweekly,
+            amount = "$6,000",
+            firstDay = 1,
+            secondDay = 16,
+        )
+    }
+}
 
 /** Configuración del fondo de caja chica (solo Caja). */
 data class FundConfig(

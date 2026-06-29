@@ -2,14 +2,22 @@ package com.arenacun.kuodra.data.sync
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.arenacun.kuodra.data.local.SessionStore
+import com.arenacun.kuodra.data.local.db.BudgetDao
+import com.arenacun.kuodra.data.local.db.BudgetEntity
 import com.arenacun.kuodra.data.local.db.CategoryDao
 import com.arenacun.kuodra.data.local.db.CategoryEntity
 import com.arenacun.kuodra.data.local.db.MovementDao
 import com.arenacun.kuodra.data.local.db.MovementEntity
+import com.arenacun.kuodra.data.local.db.PeriodSnapshotDao
+import com.arenacun.kuodra.data.local.db.PeriodSnapshotEntity
+import com.arenacun.kuodra.data.remote.BudgetApi
 import com.arenacun.kuodra.data.remote.CategoryApi
 import com.arenacun.kuodra.data.remote.MovementApi
+import com.arenacun.kuodra.data.remote.PeriodSnapshotApi
+import com.arenacun.kuodra.data.remote.dto.BudgetDto
 import com.arenacun.kuodra.data.remote.dto.CategoryDto
 import com.arenacun.kuodra.data.remote.dto.MovementDto
+import com.arenacun.kuodra.data.remote.dto.PeriodSnapshotDto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -37,7 +45,11 @@ class SyncManagerTest {
         val dataStore = PreferenceDataStoreFactory.create { tmp.newFile("sync.preferences_pb") }
         val session = SessionStore(dataStore)
         val cursors = SyncCursorStore(dataStore)
-        val manager = SyncManager(movementApi, categoryApi, movementDao, categoryDao, session, cursors)
+        val manager = SyncManager(
+            movementApi, categoryApi, EmptyBudgetApi(), EmptyPeriodSnapshotApi(),
+            movementDao, categoryDao, EmptyBudgetDao(), EmptyPeriodSnapshotDao(),
+            session, cursors,
+        )
         return Env(manager, session, cursors)
     }
 
@@ -159,5 +171,28 @@ class SyncManagerTest {
         override suspend fun upsert(category: CategoryEntity) = Unit
         override suspend fun upsertAll(categories: List<CategoryEntity>) = Unit
         override suspend fun softDelete(id: String, updatedAt: Long) = Unit
+    }
+    private class EmptyBudgetApi : BudgetApi {
+        override suspend fun list(since: String, token: String): List<BudgetDto> = emptyList()
+        override suspend fun create(dto: BudgetDto, token: String): BudgetDto = dto
+        override suspend fun update(dto: BudgetDto, token: String): BudgetDto = dto
+    }
+    private class EmptyBudgetDao : BudgetDao {
+        override fun observe(owner: String): Flow<BudgetEntity?> = flowOf(null)
+        override suspend fun dirtyRows(owner: String): List<BudgetEntity> = emptyList()
+        override suspend fun markSynced(owner: String, remoteUpdated: String) = Unit
+        override suspend fun upsert(budget: BudgetEntity) = Unit
+    }
+    private class EmptyPeriodSnapshotApi : PeriodSnapshotApi {
+        override suspend fun list(since: String, token: String): List<PeriodSnapshotDto> = emptyList()
+        override suspend fun create(dto: PeriodSnapshotDto, token: String): PeriodSnapshotDto = dto
+        override suspend fun update(dto: PeriodSnapshotDto, token: String): PeriodSnapshotDto = dto
+    }
+    private class EmptyPeriodSnapshotDao : PeriodSnapshotDao {
+        override fun observe(owner: String): Flow<List<PeriodSnapshotEntity>> = flowOf(emptyList())
+        override suspend fun find(id: String): PeriodSnapshotEntity? = null
+        override suspend fun dirtyRows(owner: String): List<PeriodSnapshotEntity> = emptyList()
+        override suspend fun markSynced(id: String, remoteUpdated: String) = Unit
+        override suspend fun upsert(snapshot: PeriodSnapshotEntity) = Unit
     }
 }

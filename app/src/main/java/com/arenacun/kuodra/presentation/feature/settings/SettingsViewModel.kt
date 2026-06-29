@@ -60,6 +60,8 @@ class SettingsViewModel(
         val calc: CalcState = CalcState(),
         val editingContact: ContactDraft? = null,
         val editingCategory: CategoryDraft? = null,
+        /** Copia de trabajo del presupuesto (Personal): edición síncrona sin esperar a Room. */
+        val budgetEdit: com.arenacun.kuodra.domain.model.BudgetConfig? = null,
     )
 
     private val local = MutableStateFlow(Local())
@@ -70,7 +72,8 @@ class SettingsViewModel(
         categoryRepository.categories,
         local,
     ) { settings, dark, categories, l ->
-        SettingsUiState(useCase, settings, dark, l.calcTarget, l.calc, l.editingContact, categories, l.editingCategory)
+        val merged = if (l.budgetEdit != null) settings.copy(budget = l.budgetEdit) else settings
+        SettingsUiState(useCase, merged, dark, l.calcTarget, l.calc, l.editingContact, categories, l.editingCategory)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState(useCase))
 
     private fun current(): SpaceSettings = settingsRepository.settings(useCase).value
@@ -81,26 +84,33 @@ class SettingsViewModel(
     fun onToggleTheme() = preferences.toggleTheme()
 
     // ---- Presupuesto (Personal) ----
-    fun onToggleBudget() = current().budget?.let { save(current().copy(budget = it.copy(enabled = !it.enabled))) }
-    fun onSetFrequency(f: BudgetFrequency) = current().budget?.let { save(current().copy(budget = it.copy(frequency = f))) }
+    fun onToggleBudget() = editBudget { it.copy(enabled = !it.enabled) }
+    fun onSetFrequency(f: BudgetFrequency) = editBudget { it.copy(frequency = f) }
 
     /** Día de la semana (Semanal): rota 1..7 con wraparound. */
-    fun onWeekdayDelta(delta: Int) = updateBudget {
+    fun onWeekdayDelta(delta: Int) = editBudget {
         it.copy(weekday = ((it.weekday - 1 + delta).mod(7)) + 1)
     }
     /** Quincenal: primer día de ingreso (1..28). */
-    fun onFirstDayDelta(delta: Int) = updateBudget { it.copy(firstDay = (it.firstDay + delta).coerceIn(1, 28)) }
+    fun onFirstDayDelta(delta: Int) = editBudget { it.copy(firstDay = (it.firstDay + delta).coerceIn(1, 28)) }
     /** Quincenal: segundo día de ingreso (1..31). */
-    fun onSecondDayDelta(delta: Int) = updateBudget { it.copy(secondDay = (it.secondDay + delta).coerceIn(1, 31)) }
+    fun onSecondDayDelta(delta: Int) = editBudget { it.copy(secondDay = (it.secondDay + delta).coerceIn(1, 31)) }
     /** Mensual: día del mes de ingreso (1..31). */
-    fun onMonthlyDayDelta(delta: Int) = updateBudget { it.copy(monthlyDay = (it.monthlyDay + delta).coerceIn(1, 31)) }
+    fun onMonthlyDayDelta(delta: Int) = editBudget { it.copy(monthlyDay = (it.monthlyDay + delta).coerceIn(1, 31)) }
     /** Personalizado: cada N días (2..90). */
-    fun onCustomIntervalDelta(delta: Int) = updateBudget {
+    fun onCustomIntervalDelta(delta: Int) = editBudget {
         it.copy(customInterval = (it.customInterval + delta).coerceIn(2, 90))
     }
 
-    private inline fun updateBudget(transform: (com.arenacun.kuodra.domain.model.BudgetConfig) -> com.arenacun.kuodra.domain.model.BudgetConfig) {
-        current().budget?.let { save(current().copy(budget = transform(it))) }
+    /**
+     * Edita el presupuesto sobre una copia de trabajo síncrona (evita perder taps rápidos por la
+     * latencia de Room) y persiste el cambio.
+     */
+    private fun editBudget(transform: (com.arenacun.kuodra.domain.model.BudgetConfig) -> com.arenacun.kuodra.domain.model.BudgetConfig) {
+        val base = local.value.budgetEdit ?: current().budget ?: return
+        val updated = transform(base)
+        local.update { it.copy(budgetEdit = updated) }
+        save(current().copy(budget = updated))
     }
 
     // ---- Calculadora de monto (presupuesto / fondo) ----
@@ -113,7 +123,7 @@ class SettingsViewModel(
         if (result != null) {
             val amount = Calc.formatAmount(result)
             when (l.calcTarget) {
-                CalcTarget.Budget -> current().budget?.let { save(current().copy(budget = it.copy(amount = amount))) }
+                CalcTarget.Budget -> editBudget { it.copy(amount = amount) }
                 CalcTarget.Fund -> current().fund?.let { save(current().copy(fund = it.copy(initial = amount))) }
                 null -> {}
             }

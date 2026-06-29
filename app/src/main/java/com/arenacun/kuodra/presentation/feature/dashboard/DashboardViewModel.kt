@@ -14,18 +14,22 @@ import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.total
 import com.arenacun.kuodra.domain.repository.MovementRepository
 import com.arenacun.kuodra.domain.repository.SettingsRepository
+import com.arenacun.kuodra.domain.repository.SnapshotRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
 import com.arenacun.kuodra.domain.usecase.BudgetPeriod
+import com.arenacun.kuodra.domain.usecase.ClosePeriod
 import com.arenacun.kuodra.presentation.feature.movement.toUi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.roundToInt
@@ -33,9 +37,10 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalCoroutinesApi::class)
 class DashboardViewModel(
     private val spaceRepository: SpaceRepository,
-    movementRepository: MovementRepository,
+    private val movementRepository: MovementRepository,
     private val summaryRepository: SummaryRepository,
     private val settingsRepository: SettingsRepository,
+    private val snapshotRepository: SnapshotRepository,
 ) : ViewModel() {
 
     private val today: LocalDate = LocalDate.now()
@@ -74,7 +79,20 @@ class DashboardViewModel(
 
     // ---- Cerrar periodo (Personal) ----
     fun onClosePeriod() = menu.update { it.copy(sheet = DashboardSheet.PCloseConfirm) }
-    fun onClosePeriodConfirm() = menu.update { it.copy(sheet = DashboardSheet.PClosed) }
+
+    /** Congela el periodo actual en un snapshot (historial) y muestra la confirmación. */
+    fun onClosePeriodConfirm() {
+        viewModelScope.launch {
+            val useCase = spaceRepository.activeSpace.value.useCase
+            if (useCase == UseCase.Personal) {
+                val movements = movementRepository.movements(useCase).first()
+                val budget = settingsRepository.settings(useCase).value.budget
+                val categories = summaryRepository.categories().associateBy { it.id }
+                snapshotRepository.add(ClosePeriod.build(budget, movements, categories, today))
+            }
+            menu.update { it.copy(sheet = DashboardSheet.PClosed) }
+        }
+    }
 
     /** Cambia al espacio (caso de uso) elegido y cierra el selector. */
     fun onSelectUseCase(useCase: UseCase) {
