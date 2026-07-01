@@ -37,7 +37,9 @@ import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.feature.movement.MovementUi
 import com.arenacun.kuodra.presentation.component.CategoryTag
+import com.arenacun.kuodra.R
 import com.arenacun.kuodra.presentation.component.Chevron
+import com.arenacun.kuodra.presentation.component.KIcon
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
 import com.arenacun.kuodra.presentation.component.KLogoMark
 import com.arenacun.kuodra.presentation.component.PlusIcon
@@ -97,13 +99,7 @@ fun DashboardScreen(
                         .border(1.dp, c.line, Kuodra.shape.pill)
                         .clickable { viewModel.onOpenMenu() },
                     contentAlignment = Alignment.Center,
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        repeat(3) {
-                            Box(Modifier.size(4.dp).clip(Kuodra.shape.pill).background(c.ink2))
-                        }
-                    }
-                }
+                ) { KIcon(R.drawable.ic_ellipsis, 18.dp, c.ink2) }
             }
 
             // ===== Scroll content =====
@@ -155,7 +151,7 @@ fun DashboardScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(9.dp),
         ) {
-            PlusIcon(18.dp, c.primaryInk, thickness = 3.dp)
+            PlusIcon(18.dp, c.primaryInk)
             Text("Agregar", style = Kuodra.type.heading, color = c.primaryInk)
         }
 
@@ -258,7 +254,7 @@ private fun SpacesSheet(
             ) {
                 Box(Modifier.size(42.dp).clip(Kuodra.shape.md).background(c.surface2),
                     contentAlignment = Alignment.Center) {
-                    PlusIcon(17.dp, c.primary, thickness = 2.5.dp)
+                    PlusIcon(17.dp, c.primary)
                 }
                 Text("Crear espacio", style = Kuodra.type.heading, color = c.primary)
             }
@@ -337,27 +333,14 @@ private fun SheetHeader(c: KuodraColors, title: String, onClose: () -> Unit) {
 private fun CheckCircle(c: KuodraColors) {
     Box(Modifier.size(22.dp).clip(Kuodra.shape.pill).background(c.primary),
         contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(11.dp)) {
-            val path = Path().apply {
-                moveTo(size.width * 0.18f, size.height * 0.52f)
-                lineTo(size.width * 0.42f, size.height * 0.74f)
-                lineTo(size.width * 0.82f, size.height * 0.28f)
-            }
-            drawPath(path, c.primaryInk, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round))
-        }
+        KIcon(R.drawable.ic_check, 12.dp, c.primaryInk)
     }
 }
 
-/** Cruz "✕" de cierre dibujada con dos trazos diagonales. */
+/** Cruz "✕" de cierre (`ic_close`). */
 @Composable
 private fun CloseIcon(size: Dp, color: Color) {
-    Canvas(Modifier.size(size)) {
-        val w = this.size.width
-        val h = this.size.height
-        val sw = 2.dp.toPx()
-        drawLine(color, Offset(0f, 0f), Offset(w, h), sw, cap = StrokeCap.Round)
-        drawLine(color, Offset(w, 0f), Offset(0f, h), sw, cap = StrokeCap.Round)
-    }
+    KIcon(R.drawable.ic_close, size, color)
 }
 
 /**
@@ -489,7 +472,7 @@ private fun MenuOptionRow(
     }
 }
 
-// ---- Iconos de línea del menú (Canvas/Box, mismo estilo que KuodraIcons) ----
+// ---- Iconos de línea del menú (aún dibujados a mano: sin drawable ic_* equivalente) ----
 
 /** Burbuja de chat (compartir): círculo con la esquina inferior-izquierda recta. */
 @Composable
@@ -498,37 +481,22 @@ private fun ShareGlyph(color: Color) {
         RoundedCornerShape(topStartPercent = 50, topEndPercent = 50, bottomEndPercent = 50, bottomStartPercent = 15)))
 }
 
-/** Diana de ajustes: anillo con punto central. */
+/** Ajustes (`ic_settings`). */
 @Composable
 private fun SettingsGlyph(color: Color) {
-    Box(
-        Modifier.size(16.dp).clip(Kuodra.shape.pill).border(2.5.dp, color, Kuodra.shape.pill),
-        contentAlignment = Alignment.Center,
-    ) { Box(Modifier.size(6.dp).clip(Kuodra.shape.pill).background(color)) }
+    KIcon(R.drawable.ic_settings, 18.dp, color)
 }
 
-/** Maletín de "cerrar periodo": cuerpo con asa superior. */
+/** Cerrar periodo (`ic_calendar_check`). */
 @Composable
 private fun ClosePeriodGlyph(color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(width = 8.dp, height = 4.dp).border(2.dp, color,
-            RoundedCornerShape(topStartPercent = 60, topEndPercent = 60, bottomEndPercent = 0, bottomStartPercent = 0)))
-        Box(Modifier.size(width = 16.dp, height = 13.dp).border(2.5.dp, color, Kuodra.shape.sm))
-    }
+    KIcon(R.drawable.ic_calendar_check, 18.dp, color)
 }
 
-/** Reloj (historial): círculo con dos manecillas. */
+/** Reloj de historial (`ic_clock`). */
 @Composable
 private fun ClockGlyph(color: Color) {
-    Box(Modifier.size(17.dp).clip(Kuodra.shape.pill).border(2.5.dp, color, Kuodra.shape.pill)) {
-        Canvas(Modifier.fillMaxSize()) {
-            val cx = size.width / 2f
-            val cy = size.height / 2f
-            val sw = 2.dp.toPx()
-            drawLine(color, Offset(cx, cy), Offset(cx, cy - size.height * 0.26f), sw, cap = StrokeCap.Round)
-            drawLine(color, Offset(cx, cy), Offset(cx + size.width * 0.2f, cy), sw, cap = StrokeCap.Round)
-        }
-    }
+    KIcon(R.drawable.ic_clock, 18.dp, color)
 }
 
 /** Cajón/bandeja (reponer fondo): rectángulo con ranura. */

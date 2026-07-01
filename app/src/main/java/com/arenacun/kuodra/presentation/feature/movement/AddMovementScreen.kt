@@ -167,7 +167,7 @@ fun AddMovementScreen(
             ) {
                 Box(Modifier.size(34.dp).clip(Kuodra.shape.md).background(c.surface2),
                     contentAlignment = Alignment.Center) {
-                    PlusIcon(15.dp, c.primary, thickness = 2.5.dp)
+                    PlusIcon(15.dp, c.primary)
                 }
                 Text("Añadir detalle", style = Kuodra.type.body, color = c.primary)
             }
@@ -403,7 +403,7 @@ private fun CategorySheet(
         ) {
             Box(Modifier.size(34.dp).clip(Kuodra.shape.md).background(c.surface2),
                 contentAlignment = Alignment.Center) {
-                PlusIcon(15.dp, c.primary, thickness = 2.5.dp)
+                PlusIcon(15.dp, c.primary)
             }
             Text("Crear categoría", style = Kuodra.type.body, color = c.primary, modifier = Modifier.weight(1f))
         }
@@ -528,7 +528,7 @@ private fun DetailSheet(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PlusIcon(14.dp, c.primary, thickness = 2.5.dp)
+            PlusIcon(14.dp, c.primary)
             Text("Añadir partida", style = Kuodra.type.body, color = c.primary)
         }
 

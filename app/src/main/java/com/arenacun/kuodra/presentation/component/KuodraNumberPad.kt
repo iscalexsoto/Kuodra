@@ -1,5 +1,6 @@
 package com.arenacun.kuodra.presentation.component
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.arenacun.kuodra.R
 import com.arenacun.kuodra.domain.model.CalcKey
 import com.arenacun.kuodra.domain.model.CalcState
 import com.arenacun.kuodra.presentation.theme.Kuodra
@@ -76,7 +78,7 @@ fun KuodraNumberPad(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 PadButton(c, ".", digit = true, Modifier.weight(1f)) { onKey(CalcKey.Dot) }
                 PadButton(c, "0", digit = true, Modifier.weight(1f)) { onKey(CalcKey.N0) }
-                PadButton(c, "←", digit = false, Modifier.weight(1f)) { onKey(CalcKey.Back) }
+                PadIconButton(c, R.drawable.ic_backspace, Modifier.weight(1f)) { onKey(CalcKey.Back) }
             }
         }
 
@@ -96,10 +98,35 @@ private fun RowScope.PadButton(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
+    PadButtonBox(c, digit, modifier, onClick) {
+        Text(label, style = Kuodra.type.heading, color = if (digit) c.ink else c.tintInk)
+    }
+}
+
+/** Variante de [PadButton] que pinta un ícono `ic_*` (borrar) en vez de texto. */
+@Composable
+private fun RowScope.PadIconButton(
+    c: KuodraColors,
+    @DrawableRes icon: Int,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    PadButtonBox(c, digit = false, modifier, onClick) {
+        KIcon(icon, 22.dp, c.tintInk)
+    }
+}
+
+@Composable
+private fun PadButtonBox(
+    c: KuodraColors,
+    digit: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
     val bg: Color = if (digit) c.surface2 else c.tint
-    val ink: Color = if (digit) c.ink else c.tintInk
     Box(
         modifier.clip(Kuodra.shape.lg).background(bg).clickable(onClick = onClick).padding(vertical = 16.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(label, style = Kuodra.type.heading, color = ink) }
+    ) { content() }
 }

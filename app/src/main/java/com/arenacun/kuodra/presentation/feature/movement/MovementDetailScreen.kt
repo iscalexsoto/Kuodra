@@ -24,9 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arenacun.kuodra.R
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.component.CategoryTag
+import com.arenacun.kuodra.presentation.component.KIcon
 import com.arenacun.kuodra.presentation.component.ToneAvatar
 import com.arenacun.kuodra.presentation.theme.Kuodra
 import com.arenacun.kuodra.presentation.theme.KuodraColors
@@ -199,7 +201,15 @@ fun MovementDetailScreen(
                         .clickable { viewModel.onDeleteRequest() }
                         .padding(vertical = 15.dp),
                     contentAlignment = Alignment.Center,
-                ) { Text("Eliminar", style = Kuodra.type.heading, color = c.neg) }
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        KIcon(R.drawable.ic_delete, 16.dp, c.neg)
+                        Text("Eliminar", style = Kuodra.type.heading, color = c.neg)
+                    }
+                }
             }
         } else {
             Column(

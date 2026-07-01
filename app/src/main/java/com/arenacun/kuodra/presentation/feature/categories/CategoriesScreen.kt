@@ -98,7 +98,7 @@ fun CategoriesScreen(
                         Modifier.size(36.dp).clip(Kuodra.shape.pill).background(c.tint),
                         contentAlignment = Alignment.Center,
                     ) {
-                        PlusIcon(16.dp, c.tintInk, thickness = 2.5.dp)
+                        PlusIcon(16.dp, c.tintInk)
                     }
                     Text("Crear categoría", style = Kuodra.type.body, color = c.tintInk)
                 }

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
+import com.arenacun.kuodra.R
 import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.presentation.theme.Kuodra
@@ -88,7 +89,15 @@ fun CategoryEditSheet(
                     Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.negTint)
                         .clickable(onClick = onDelete).padding(vertical = 15.dp),
                     contentAlignment = Alignment.Center,
-                ) { Text("Eliminar", style = Kuodra.type.heading, color = c.neg) }
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        KIcon(R.drawable.ic_delete, 16.dp, c.neg)
+                        Text("Eliminar", style = Kuodra.type.heading, color = c.neg)
+                    }
+                }
             }
             val canSave = draft.name.isNotBlank()
             Box(

@@ -1,5 +1,6 @@
 package com.arenacun.kuodra.presentation.component
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -9,11 +10,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -66,35 +66,30 @@ fun KLogoMark(
     }
 }
 
-/** Cruz "+" dibujada con dos barras redondeadas. */
+/** Pinta un drawable vectorial `ic_*` tintado con [tint], respetando los tokens de tema. */
 @Composable
-fun PlusIcon(size: Dp, color: Color, thickness: Dp = 2.5.dp, modifier: Modifier = Modifier) {
-    Canvas(modifier.size(size)) {
-        val t = thickness.toPx()
-        val r = androidx.compose.ui.geometry.CornerRadius(t / 2, t / 2)
-        drawRoundRect(color, Offset(0f, (this.size.height - t) / 2),
-            androidx.compose.ui.geometry.Size(this.size.width, t), r)
-        drawRoundRect(color, Offset((this.size.width - t) / 2, 0f),
-            androidx.compose.ui.geometry.Size(t, this.size.height), r)
-    }
+fun KIcon(@DrawableRes id: Int, size: Dp, tint: Color, modifier: Modifier = Modifier) {
+    Icon(
+        painter = painterResource(id),
+        contentDescription = null,
+        tint = tint,
+        modifier = modifier.size(size),
+    )
 }
 
-/** Galón (chevron). direction en grados: 0 = ">", 90 = "v", 180 = "<", 270 = "^". */
+/** Glyph de "agregar" (`ic_add`): usado en botones de añadir persona/categoría y steppers. */
 @Composable
-fun Chevron(size: Dp, color: Color, degrees: Float = 0f, thickness: Dp = 2.dp, modifier: Modifier = Modifier) {
-    Canvas(modifier.size(size)) {
-        rotate(degrees) {
-            val w = this.size.width
-            val h = this.size.height
-            val stroke = Stroke(width = thickness.toPx())
-            val path = Path().apply {
-                moveTo(w * 0.35f, h * 0.2f)
-                lineTo(w * 0.65f, h * 0.5f)
-                lineTo(w * 0.35f, h * 0.8f)
-            }
-            drawPath(path, color, style = stroke)
-        }
-    }
+fun PlusIcon(size: Dp, color: Color, modifier: Modifier = Modifier) {
+    KIcon(R.drawable.ic_add, size, color, modifier)
+}
+
+/**
+ * Galón (chevron) pintado con `ic_chevron_right` rotado. `degrees`: 0 = ">", 90 = "v",
+ * 180 = "<" (atrás), 270 = "^".
+ */
+@Composable
+fun Chevron(size: Dp, color: Color, degrees: Float = 0f, modifier: Modifier = Modifier) {
+    KIcon(R.drawable.ic_chevron_right, size, color, modifier.rotate(degrees))
 }
 
 /** Lupa de búsqueda: círculo + mango. */

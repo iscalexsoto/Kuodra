@@ -90,7 +90,8 @@ com.arenacun.kuodra
     theme/      Theme(Kuodra accessor), Color(KuodraColors), Type, Shape
     component/
       KuodraButton, KuodraCard, KuodraTextField, KuodraBanner, KuodraListRow, KuodraHeroCard
-      KuodraIcons.kt           # Chevron, PlusIcon, KLogoMark (logo oficial), ToneAvatar, CategoryTag, avatar()
+      KuodraIcons.kt           # KIcon (pinta drawables ic_*), Chevron/PlusIcon (sobre ic_chevron_right/ic_add),
+                               #   SearchGlyph, KLogoMark (logo oficial), ToneAvatar, CategoryTag, avatar()
       BackCircle
       KuodraCalculator         # numpad (dibuja CalcState, reenvía CalcKey)
       KuodraNumberPad          # teclado numérico ligero (solo dígitos/punto/borrar, sin operadores; reusa Calc)

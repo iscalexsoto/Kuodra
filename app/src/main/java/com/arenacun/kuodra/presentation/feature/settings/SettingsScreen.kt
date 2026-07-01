@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arenacun.kuodra.R
 import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.BudgetFrequency
 import com.arenacun.kuodra.domain.model.DateLabels
@@ -42,6 +43,7 @@ import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.component.Chevron
+import com.arenacun.kuodra.presentation.component.KIcon
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
 import com.arenacun.kuodra.presentation.component.KuodraCalculator
 import com.arenacun.kuodra.presentation.component.KuodraTextField
@@ -484,7 +486,7 @@ private fun MiniBtn(c: KuodraColors, minus: Boolean, onClick: () -> Unit) {
         Modifier.size(34.dp).clip(Kuodra.shape.sm).background(c.surface).border(1.dp, c.line, Kuodra.shape.sm)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { if (minus) MinusBar(12.dp, c.ink2) else PlusIcon(12.dp, c.ink2, thickness = 2.5.dp) }
+    ) { if (minus) MinusBar(12.dp, c.ink2) else PlusIcon(12.dp, c.ink2) }
 }
 
 @Composable
@@ -493,7 +495,7 @@ private fun BigBtn(c: KuodraColors, minus: Boolean, onClick: () -> Unit) {
         Modifier.size(42.dp).clip(Kuodra.shape.md).background(c.surface2).border(1.dp, c.line, Kuodra.shape.md)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { if (minus) MinusBar(14.dp, c.ink2) else PlusIcon(14.dp, c.ink2, thickness = 2.5.dp) }
+    ) { if (minus) MinusBar(14.dp, c.ink2) else PlusIcon(14.dp, c.ink2) }
 }
 
 /** Barra horizontal redondeada (signo menos). */
@@ -547,7 +549,7 @@ private fun MembersSection(c: KuodraColors, label: String, members: List<Person>
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(Modifier.size(36.dp).clip(Kuodra.shape.pill).background(c.tint), contentAlignment = Alignment.Center) {
-                    PlusIcon(16.dp, c.tintInk, thickness = 2.5.dp)
+                    PlusIcon(16.dp, c.tintInk)
                 }
                 Text("Agregar contacto", style = Kuodra.type.body, color = c.tintInk)
             }
@@ -583,7 +585,15 @@ private fun ContactSheet(c: KuodraColors, draft: ContactDraft, viewModel: Settin
                     Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.negTint)
                         .clickable(onClick = viewModel::onDeleteContact).padding(vertical = 15.dp),
                     contentAlignment = Alignment.Center,
-                ) { Text("Eliminar", style = Kuodra.type.heading, color = c.neg) }
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        KIcon(R.drawable.ic_delete, 16.dp, c.neg)
+                        Text("Eliminar", style = Kuodra.type.heading, color = c.neg)
+                    }
+                }
             }
             Box(
                 Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.primary)
