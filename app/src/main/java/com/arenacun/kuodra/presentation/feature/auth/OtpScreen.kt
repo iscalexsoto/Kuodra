@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arenacun.kuodra.presentation.app.StartState
 import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.theme.Kuodra
 
@@ -31,13 +32,13 @@ fun OtpScreen(
     viewModel: AuthViewModel,
     onBack: () -> Unit,
     onChangeEmail: () -> Unit,
-    onVerified: () -> Unit,
+    onVerified: (StartState) -> Unit,
 ) {
     val c = Kuodra.colors
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
-        viewModel.otpVerified.collect { onVerified() }
+        viewModel.otpVerified.collect { onVerified(it) }
     }
 
     Column(Modifier.fillMaxSize().background(c.screenBg)) {

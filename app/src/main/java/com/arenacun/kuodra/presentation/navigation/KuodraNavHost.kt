@@ -13,6 +13,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.arenacun.kuodra.presentation.app.toDestination
 import com.arenacun.kuodra.presentation.feature.auth.AuthViewModel
 import com.arenacun.kuodra.presentation.feature.auth.EmailScreen
 import com.arenacun.kuodra.presentation.feature.auth.OtpScreen
@@ -63,9 +64,11 @@ fun KuodraNavHost(
                     viewModel = entry.sharedAuthViewModel(navController),
                     onBack = { navController.popBackStack() },
                     onChangeEmail = { navController.popBackStack() },
-                    onVerified = {
-                        navController.navigate(Destination.Name) {
-                            popUpTo(Destination.AuthGraph) { inclusive = true }
+                    // Rutea con el estado ya resuelto: si el backend tenía el nombre, se salta
+                    // la pantalla de nombre (y va a Mode/Dashboard según corresponda).
+                    onVerified = { state ->
+                        navController.navigate(state.toDestination()) {
+                            popUpTo(navController.graph.id) { inclusive = true }
                         }
                     },
                 )
