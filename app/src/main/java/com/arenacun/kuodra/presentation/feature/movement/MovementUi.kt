@@ -6,6 +6,7 @@ import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.DateLabels
 import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.UseCase
+import com.arenacun.kuodra.domain.model.adjustmentOf
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.domain.usecase.MovementGroup
 import java.time.LocalDate
@@ -29,10 +30,16 @@ data class MovementUi(
     val splitShares: List<SplitShare>,
     val perHead: String?,
     val note: String,
+    val items: List<MovementItemUi>,
+    /** "Ajuste" (total no detallado) formateado, o null si el movimiento no tiene desglose. */
+    val adjustment: String?,
 )
 
 /** Reparto de un movimiento dividido entre varias personas. */
 data class SplitShare(val name: String, val initials: String, val share: String, val tone: AvatarTone)
+
+/** Partida del desglose, ya proyectada a UI. */
+data class MovementItemUi(val concept: String, val amount: String)
 
 /** Grupo de día para "Ver todo", ya proyectado a UI. */
 data class MovementGroupUi(val header: String, val movements: List<MovementUi>)
@@ -59,6 +66,9 @@ fun Movement.toUi(
     val shares = splitNames.map { name ->
         SplitShare(name, if (name == "Tú") "T" else name.take(1), perHead.orEmpty(), toneForName(name))
     }
+    val itemsUi = items.map { MovementItemUi(it.concept, Calc.formatAmount(it.amount.major)) }
+    val adjustmentStr = if (items.isNotEmpty())
+        Calc.formatAmount(adjustmentOf(amount, items).major) else null
     return MovementUi(
         id = id,
         title = title.ifBlank { cat.name },
@@ -73,6 +83,8 @@ fun Movement.toUi(
         splitShares = shares,
         perHead = perHead,
         note = note,
+        items = itemsUi,
+        adjustment = adjustmentStr,
     )
 }
 

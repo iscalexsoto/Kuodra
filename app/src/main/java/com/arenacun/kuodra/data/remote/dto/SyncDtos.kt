@@ -27,8 +27,19 @@ data class MovementDto(
     val date: String = "",
     val payer: String? = null,
     val splitNames: List<String> = emptyList(),
+    val items: List<MovementItemDto> = emptyList(),
     val deleted: Boolean = false,
     val updated: String = "",
+)
+
+/** Partida del desglose de un movimiento. `amount` en centavos. Campo json en PocketBase. */
+@Serializable
+data class MovementItemDto(
+    val id: String,
+    val concept: String = "",
+    val amount: Long = 0,
+    val payer: String? = null,
+    val inFund: Boolean = true,
 )
 
 @Serializable

@@ -26,6 +26,7 @@ cableadas en [`navigation/KuodraNavHost.kt`](../app/src/main/java/com/arenacun/k
 | `MovementDetail(id)` | detalle | `scrMovDetail` | fila de movimiento |
 | `AllMovements` | ver todo (búsqueda/filtros) | `scrVerTodo` | "Ver todo" del dashboard |
 | `Settings` | ajustes adaptativos | `scr*Settings` | menú → "Ajustes" |
+| `Categories` | gestión de categorías (buscador) | — | Ajustes → "Categorías" |
 | `Settle` | liquidación / corte | `scrSettle` | tarjeta "Liquidar/Corte" |
 | `Replenish` | reponer fondo (Caja) | `scrRepon` | banner "Reponer" / menú |
 | `History` / `HistoryDetail(id)` | historial de cortes | `scrHistory` | Ajustes → "Historial" / menú |
@@ -60,7 +61,7 @@ com.arenacun.kuodra
       UseCase.kt                # enum + Terminology + terminologyFor()
       Session.kt                # usuario autenticado (userId + email); el token vive en data
       Space.kt, Person.kt, Category.kt, AvatarTone.kt
-      Movement.kt              # incluye date: LocalDate + SplitShare + helpers puros
+      Movement.kt              # incluye date: LocalDate + items (MovementItem) + adjustmentOf() + helpers puros
       MovementCategory.kt      # catálogo del selector de categoría (defaults)
       Calc.kt                  # MOTOR PURO de la calculadora (CalcState, CalcKey, evaluate, formatAmount)
       CalendarMonth.kt         # LÓGICA PURA del calendario (rejilla, navegación acotada a hoy)
@@ -92,6 +93,7 @@ com.arenacun.kuodra
       KuodraIcons.kt           # Chevron, PlusIcon, KLogoMark (logo oficial), ToneAvatar, CategoryTag, avatar()
       BackCircle
       KuodraCalculator         # numpad (dibuja CalcState, reenvía CalcKey)
+      KuodraNumberPad          # teclado numérico ligero (solo dígitos/punto/borrar, sin operadores; reusa Calc)
       KuodraCalendar           # calendario (dibuja CalendarMonth, mes visible = remember)
       KuodraBottomSheet        # wrapper de ModalBottomSheet con tokens Kuodra
     feature/
@@ -101,6 +103,7 @@ com.arenacun.kuodra
       movement/    AddMovement{ViewModel,UiState,Screen}, MovementDetail{ViewModel,Screen}
       allmovements/AllMovements{ViewModel,UiState,Screen}
       settings/    Settings{ViewModel,UiState,Screen}  (adaptativa por caso de uso)
+      categories/  Categories{ViewModel,UiState,Screen}  (catálogo + buscador, todos los casos)
       settle/      Settle{ViewModel,UiState,Screen}
       replenish/   Replenish{ViewModel,UiState,Screen}
       history/     History{ViewModel,Screen}, HistoryDetail{ViewModel,Screen}

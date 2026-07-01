@@ -97,6 +97,19 @@ fun Chevron(size: Dp, color: Color, degrees: Float = 0f, thickness: Dp = 2.dp, m
     }
 }
 
+/** Lupa de búsqueda: círculo + mango. */
+@Composable
+fun SearchGlyph(size: Dp, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(size)) {
+        val r = this.size.minDimension * 0.32f
+        val cx = this.size.width * 0.42f
+        val cy = this.size.height * 0.42f
+        drawCircle(color, radius = r, center = Offset(cx, cy), style = Stroke(width = size.toPx() * 0.12f))
+        drawLine(color, Offset(cx + r * 0.8f, cy + r * 0.8f),
+            Offset(this.size.width * 0.86f, this.size.height * 0.86f), strokeWidth = size.toPx() * 0.12f)
+    }
+}
+
 /** Avatar con paleta tonal (bg/ink) — variante de Avatar para personas con color propio. */
 @Composable
 fun ToneAvatar(

@@ -15,10 +15,9 @@ import androidx.room.TypeConverters
         BudgetEntity::class,
         PeriodSnapshotEntity::class,
     ],
-    // v4: sin cambios de esquema; el bump fuerza una migración destructiva única para que el
-    // callback limpie los cursores y el sync repueble desde PocketBase (recupera instalaciones
-    // que quedaron con Room vacío + cursores viejos tras el bump a v3).
-    version = 4,
+    // v5: nueva columna `itemsJson` en `movements` (desglose en partidas). El bump fuerza la
+    // migración destructiva ya configurada; el sync repuebla desde PocketBase tras limpiar.
+    version = 5,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)

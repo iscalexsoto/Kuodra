@@ -20,7 +20,28 @@ data class Movement(
     val payer: String? = null,
     /** Personas entre las que se divide el gasto (Gastos). */
     val splitNames: List<String> = emptyList(),
+    /** Desglose interno opcional en partidas (concepto + cantidad). Vacío = sin detalle. */
+    val items: List<MovementItem> = emptyList(),
 )
+
+/**
+ * Partida de un desglose: una línea (concepto + cantidad) dentro de un [Movement]. El remanente
+ * no detallado (total − suma de partidas) se calcula con [adjustmentOf] y se muestra como
+ * "Ajuste"; no se guarda como partida.
+ */
+data class MovementItem(
+    val id: String,
+    val concept: String,
+    val amount: Money,
+    /** Gastos (futuro): quién pagó esta partida; null = el pagador del movimiento. */
+    val payer: String? = null,
+    /** Caja (futuro): si la partida entra al fondo. true por defecto. */
+    val inFund: Boolean = true,
+)
+
+/** Monto no detallado: total − suma de partidas (puede ser negativo si exceden el total). */
+fun adjustmentOf(total: Money, items: List<MovementItem>): Money =
+    total - items.map { it.amount }.total()
 
 /** Inicial(es) a partir de un nombre. */
 fun initialsOf(name: String): String = name.trim().take(1).uppercase()

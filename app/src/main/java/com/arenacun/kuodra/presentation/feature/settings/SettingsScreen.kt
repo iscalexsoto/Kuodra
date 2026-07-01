@@ -36,17 +36,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.BudgetFrequency
-import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.DateLabels
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.component.BackCircle
-import com.arenacun.kuodra.presentation.component.CategoryEditSheet
-import com.arenacun.kuodra.presentation.component.CategoryTag
 import com.arenacun.kuodra.presentation.component.Chevron
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
 import com.arenacun.kuodra.presentation.component.KuodraCalculator
+import com.arenacun.kuodra.presentation.component.KuodraTextField
 import com.arenacun.kuodra.presentation.component.PlusIcon
 import com.arenacun.kuodra.presentation.component.ToneAvatar
 import com.arenacun.kuodra.presentation.theme.Kuodra
@@ -57,6 +55,7 @@ import org.koin.androidx.compose.koinViewModel
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenCategories: () -> Unit,
     onSignedOut: () -> Unit,
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
@@ -109,7 +108,6 @@ fun SettingsScreen(
         when (state.useCase) {
             UseCase.Personal -> {
                 settings.budget?.let { BudgetSection(c, it, viewModel) }
-                CategoriesSection(c, state.categories, viewModel)
             }
             UseCase.Gastos -> {
                 MembersSection(c, "MIEMBROS", settings.members, viewModel)
@@ -127,11 +125,19 @@ fun SettingsScreen(
             }
         }
 
+        // Categorías: pantalla dedicada con buscador (todos los casos de uso)
+        SectionLabel(c, "CATEGORÍAS")
+        Card(c) {
+            NavRow(c, "Categorías", "Crea, edita y busca tus categorías", onOpenCategories)
+        }
+
         // Historial de cortes / periodos
         SectionLabel(c, "HISTORIAL")
         Card(c) {
-            TapRow(c, if (state.useCase == UseCase.Personal) "Periodos cerrados" else "Cortes anteriores", "") {
-                onOpenHistory()
+            if (state.useCase == UseCase.Personal) {
+                NavRow(c, "Periodos cerrados", "Revisa tus periodos cerrados", onOpenHistory)
+            } else {
+                NavRow(c, "Cortes anteriores", "Consulta los cortes anteriores", onOpenHistory)
             }
         }
 
@@ -147,10 +153,25 @@ fun SettingsScreen(
             }
         }
 
-        // Cuenta (correo de la sesión + cerrar sesión)
+        // Cuenta (nombre editable + correo de la sesión + cerrar sesión)
         SectionLabel(c, "CUENTA")
         Card(c) {
             Column(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = viewModel::onEditName)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Nombre", style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
+                    Text(
+                        state.accountName.ifBlank { "Sin definir" },
+                        style = Kuodra.type.caption,
+                        color = if (state.accountName.isBlank()) c.ink3 else c.ink,
+                    )
+                    Box(Modifier.width(8.dp))
+                    Chevron(7.dp, c.ink3, degrees = 0f)
+                }
+                Divider(c)
                 viewModel.accountEmail?.let { email ->
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -189,53 +210,49 @@ fun SettingsScreen(
             ContactSheet(c, draft, viewModel)
         }
     }
-    state.editingCategory?.let { draft ->
-        KuodraBottomSheet(onDismiss = viewModel::onCloseCategory) {
-            CategoryEditSheet(
-                c = c,
-                draft = draft,
-                onName = viewModel::onCategoryDraftName,
-                onTone = viewModel::onCategoryDraftTone,
-                onConfirm = viewModel::onConfirmCategory,
-                onDelete = if (draft.original != null) viewModel::onDeleteCategory else null,
-            )
+    state.editingName?.let { draft ->
+        KuodraBottomSheet(onDismiss = viewModel::onCloseName) {
+            NameSheet(c, draft, viewModel)
         }
     }
 }
 
-/** Sección "Categorías" (Personal): catálogo del usuario; la estática "Sin categoría" no se edita. */
+/** Hoja para editar el nombre del usuario (sección Cuenta). */
 @Composable
-private fun CategoriesSection(c: KuodraColors, categories: List<Category>, viewModel: SettingsViewModel) {
-    SectionLabel(c, "CATEGORÍAS")
-    Card(c) {
-        Column(Modifier.fillMaxWidth()) {
-            categories.forEach { cat ->
-                val editable = !cat.isStatic
-                Row(
-                    Modifier.fillMaxWidth()
-                        .then(if (editable) Modifier.clickable { viewModel.onEditCategory(cat) } else Modifier)
-                        .padding(horizontal = 15.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CategoryTag(cat.tag, cat.tone, size = 36.dp)
-                    Text(cat.name, style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
-                    if (editable) Chevron(7.dp, c.ink3, degrees = 90f)
-                }
-                Divider(c)
-            }
-            Row(
-                Modifier.fillMaxWidth().clickable { viewModel.onStartCreateCategory() }
-                    .padding(horizontal = 15.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(36.dp).clip(Kuodra.shape.pill).background(c.tint), contentAlignment = Alignment.Center) {
-                    PlusIcon(16.dp, c.tintInk, thickness = 2.5.dp)
-                }
-                Text("Crear categoría", style = Kuodra.type.body, color = c.tintInk)
+private fun NameSheet(c: KuodraColors, draft: String, viewModel: SettingsViewModel) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
+        Text("Tu nombre", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(bottom = 12.dp))
+        KuodraTextField(
+            value = draft,
+            onValueChange = viewModel::onNameDraftChange,
+            label = "NOMBRE",
+            placeholder = "¿Cómo te llamas?",
+        )
+        val canSave = draft.isNotBlank()
+        Box(
+            Modifier.fillMaxWidth().padding(top = 18.dp).clip(Kuodra.shape.lg)
+                .background(if (canSave) c.primary else c.surface2)
+                .clickable(enabled = canSave, onClick = viewModel::onConfirmName).padding(vertical = 15.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("Guardar", style = Kuodra.type.heading, color = if (canSave) c.primaryInk else c.ink3) }
+    }
+}
+
+/** Fila que navega a otra pantalla: etiqueta + descripción + chevron a la derecha. */
+@Composable
+private fun NavRow(c: KuodraColors, label: String, sub: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = Kuodra.type.body, color = c.ink)
+            if (sub.isNotEmpty()) {
+                Text(sub, style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(top = 2.dp))
             }
         }
+        Box(Modifier.width(8.dp))
+        Chevron(7.dp, c.ink3, degrees = 0f)
     }
 }
 

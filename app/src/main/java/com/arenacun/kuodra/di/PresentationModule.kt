@@ -3,6 +3,7 @@ package com.arenacun.kuodra.di
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.app.AppViewModel
 import com.arenacun.kuodra.presentation.feature.allmovements.AllMovementsViewModel
+import com.arenacun.kuodra.presentation.feature.categories.CategoriesViewModel
 import com.arenacun.kuodra.presentation.feature.auth.AuthViewModel
 import com.arenacun.kuodra.presentation.feature.dashboard.DashboardViewModel
 import com.arenacun.kuodra.presentation.feature.history.HistoryDetailViewModel
@@ -28,6 +29,7 @@ val presentationModule = module {
     viewModelOf(::DashboardViewModel)
     viewModelOf(::AddMovementViewModel)
     viewModelOf(::SettingsViewModel)
+    viewModelOf(::CategoriesViewModel)
     viewModelOf(::SettleViewModel)
     viewModelOf(::ReplenishViewModel)
     viewModelOf(::HistoryViewModel)

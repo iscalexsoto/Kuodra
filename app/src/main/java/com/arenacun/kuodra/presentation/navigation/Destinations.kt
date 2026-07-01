@@ -28,6 +28,7 @@ sealed interface Destination {
     @Serializable data object AddMovement : Destination
     @Serializable data object AllMovements : Destination
     @Serializable data object Settings : Destination
+    @Serializable data object Categories : Destination
     @Serializable data object Settle : Destination
     @Serializable data object Replenish : Destination
     @Serializable data object History : Destination

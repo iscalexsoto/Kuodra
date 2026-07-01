@@ -9,6 +9,7 @@ import com.arenacun.kuodra.domain.model.CalcState
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
+import com.arenacun.kuodra.domain.model.MovementItem
 import com.arenacun.kuodra.domain.model.Space
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.newId
@@ -89,13 +90,51 @@ class AddMovementViewModel(
 
     // ---- Sheets ----
     fun onOpenSheet(sheet: AddSheet) = _uiState.update { it.copy(sheet = sheet) }
-    fun onCloseSheet() = _uiState.update { it.copy(sheet = null, editingCategory = null) }
+    fun onCloseSheet() = _uiState.update { st ->
+        // Al cerrar, descarta las partidas totalmente vacías (sin concepto ni cantidad).
+        val items = st.items.filter { it.amount.cents != 0L || it.concept.isNotBlank() }
+        st.copy(sheet = null, editingCategory = null, items = items)
+    }
     fun onPickCategory(category: Category) =
         _uiState.update { it.copy(category = category, sheet = null) }
     fun onPickPayer(name: String) = _uiState.update { it.copy(payer = name, sheet = null) }
     fun onToggleSplit(name: String) = _uiState.update { st ->
         val names = if (name in st.splitNames) st.splitNames - name else st.splitNames + name
         st.copy(splitNames = names)
+    }
+
+    // ---- Detalle (partidas) ----
+    fun onAddItem() = _uiState.update { st ->
+        st.copy(items = st.items + MovementItem(newId(), "", Money.Zero))
+    }
+    fun onItemConcept(id: String, value: String) = _uiState.update { st ->
+        st.copy(items = st.items.map { if (it.id == id) it.copy(concept = value) else it })
+    }
+    fun onRemoveItem(id: String) = _uiState.update { st ->
+        st.copy(items = st.items.filterNot { it.id == id })
+    }
+
+    // ---- Teclado numérico (cantidad de una partida) ----
+    fun onOpenItemPad(id: String) = _uiState.update { st ->
+        val cents = st.items.firstOrNull { it.id == id }?.amount?.cents ?: 0L
+        // Precarga la expresión con el monto actual (sin decimales sobrantes si es entero).
+        val expr = when {
+            cents == 0L -> ""
+            cents % 100 == 0L -> (cents / 100).toString()
+            else -> (cents / 100.0).toString()
+        }
+        st.copy(showNumberPad = true, editingItemId = id, pad = CalcState(expr))
+    }
+    fun onPadKey(key: CalcKey) = _uiState.update { it.copy(pad = Calc.press(it.pad, key)) }
+    fun onDismissPad() = _uiState.update { it.copy(showNumberPad = false, editingItemId = null) }
+    fun onConfirmItemAmount() = _uiState.update { st ->
+        val id = st.editingItemId ?: return@update st.copy(showNumberPad = false)
+        val amount = st.pad.result?.let { Money.ofMajor(it) } ?: Money.Zero
+        st.copy(
+            items = st.items.map { if (it.id == id) it.copy(amount = amount) else it },
+            showNumberPad = false,
+            editingItemId = null,
+        )
     }
 
     // ---- Crear categoría inline ----
@@ -132,6 +171,7 @@ class AddMovementViewModel(
         val amount = st.amount?.let { Money.ofMajor(it) } ?: Money.Zero
         val payer = if (useCase != UseCase.Personal) st.payer else null
         val split = if (useCase == UseCase.Gastos) st.splitNames else emptyList()
+        val items = st.items.filter { it.amount.cents != 0L || it.concept.isNotBlank() }
         return Movement(
             id = newId(),
             amount = amount,
@@ -141,6 +181,7 @@ class AddMovementViewModel(
             date = st.date,
             payer = payer,
             splitNames = split,
+            items = items,
         )
     }
 }

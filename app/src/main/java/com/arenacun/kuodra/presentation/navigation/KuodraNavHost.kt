@@ -18,6 +18,7 @@ import com.arenacun.kuodra.presentation.feature.auth.EmailScreen
 import com.arenacun.kuodra.presentation.feature.auth.OtpScreen
 import com.arenacun.kuodra.presentation.feature.allmovements.AllMovementsScreen
 import com.arenacun.kuodra.presentation.feature.auth.WelcomeScreen
+import com.arenacun.kuodra.presentation.feature.categories.CategoriesScreen
 import com.arenacun.kuodra.presentation.feature.dashboard.DashboardScreen
 import com.arenacun.kuodra.presentation.feature.history.HistoryDetailScreen
 import com.arenacun.kuodra.presentation.feature.history.HistoryScreen
@@ -129,12 +130,16 @@ fun KuodraNavHost(
             SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onOpenHistory = { navController.navigate(Destination.History) },
+                onOpenCategories = { navController.navigate(Destination.Categories) },
                 onSignedOut = {
                     navController.navigate(Destination.AuthGraph) {
                         popUpTo(navController.graph.id) { inclusive = true }
                     }
                 },
             )
+        }
+        composable<Destination.Categories> {
+            CategoriesScreen(onBack = { navController.popBackStack() })
         }
         composable<Destination.History> {
             HistoryScreen(

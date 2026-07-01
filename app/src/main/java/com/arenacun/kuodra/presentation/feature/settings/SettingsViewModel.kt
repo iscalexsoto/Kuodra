@@ -7,16 +7,12 @@ import com.arenacun.kuodra.domain.model.BudgetFrequency
 import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.CalcKey
 import com.arenacun.kuodra.domain.model.CalcState
-import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.SpaceSettings
-import com.arenacun.kuodra.domain.model.newId
 import com.arenacun.kuodra.domain.repository.AuthRepository
-import com.arenacun.kuodra.domain.repository.CategoryRepository
 import com.arenacun.kuodra.domain.repository.PreferencesRepository
 import com.arenacun.kuodra.domain.repository.SettingsRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
-import com.arenacun.kuodra.presentation.component.CategoryDraft
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,7 +31,6 @@ class SettingsViewModel(
     spaceRepository: SpaceRepository,
     private val settingsRepository: SettingsRepository,
     private val preferences: PreferencesRepository,
-    private val categoryRepository: CategoryRepository,
     private val authRepository: AuthRepository,
 ) : ViewModel() {
 
@@ -59,7 +54,7 @@ class SettingsViewModel(
         val calcTarget: CalcTarget? = null,
         val calc: CalcState = CalcState(),
         val editingContact: ContactDraft? = null,
-        val editingCategory: CategoryDraft? = null,
+        val editingName: String? = null,
         /** Copia de trabajo del presupuesto (Personal): edición síncrona sin esperar a Room. */
         val budgetEdit: com.arenacun.kuodra.domain.model.BudgetConfig? = null,
     )
@@ -69,11 +64,11 @@ class SettingsViewModel(
     val uiState = combine(
         settingsRepository.settings(useCase),
         preferences.darkTheme,
-        categoryRepository.categories,
+        authRepository.session,
         local,
-    ) { settings, dark, categories, l ->
+    ) { settings, dark, session, l ->
         val merged = if (l.budgetEdit != null) settings.copy(budget = l.budgetEdit) else settings
-        SettingsUiState(useCase, merged, dark, l.calcTarget, l.calc, l.editingContact, categories, l.editingCategory)
+        SettingsUiState(useCase, merged, dark, l.calcTarget, l.calc, l.editingContact, session?.name.orEmpty(), l.editingName)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState(useCase))
 
     private fun current(): SpaceSettings = settingsRepository.settings(useCase).value
@@ -161,35 +156,15 @@ class SettingsViewModel(
         local.update { it.copy(editingContact = null) }
     }
 
-    // ---- Categorías (Personal) ----
-    fun onStartCreateCategory() = local.update { it.copy(editingCategory = CategoryDraft()) }
-    fun onEditCategory(category: Category) = local.update {
-        it.copy(editingCategory = CategoryDraft(category, category.name, category.tone))
-    }
-    fun onCategoryDraftName(value: String) =
-        local.update { it.copy(editingCategory = it.editingCategory?.copy(name = value)) }
-    fun onCategoryDraftTone(tone: AvatarTone) =
-        local.update { it.copy(editingCategory = it.editingCategory?.copy(tone = tone)) }
-    fun onCloseCategory() = local.update { it.copy(editingCategory = null) }
+    // ---- Nombre de usuario (sección Cuenta) ----
+    fun onEditName() = local.update { it.copy(editingName = authRepository.session.value?.name.orEmpty()) }
+    fun onNameDraftChange(value: String) = local.update { it.copy(editingName = value) }
+    fun onCloseName() = local.update { it.copy(editingName = null) }
 
-    fun onConfirmCategory() {
-        val draft = local.value.editingCategory ?: return
-        if (draft.name.isBlank()) return
-        val original = draft.original
-        val category = (original ?: Category(id = newId(), name = "", tag = "", tone = draft.tone)).copy(
-            name = draft.name.trim(),
-            tag = Category.deriveTag(draft.name),
-            tone = draft.tone,
-        )
-        viewModelScope.launch {
-            if (original == null) categoryRepository.add(category) else categoryRepository.update(category)
-        }
-        local.update { it.copy(editingCategory = null) }
-    }
-
-    fun onDeleteCategory() {
-        val original = local.value.editingCategory?.original ?: return
-        viewModelScope.launch { categoryRepository.delete(original.id) }
-        local.update { it.copy(editingCategory = null) }
+    fun onConfirmName() {
+        val name = local.value.editingName?.trim().orEmpty()
+        if (name.isBlank()) return
+        viewModelScope.launch { authRepository.updateName(name) }
+        local.update { it.copy(editingName = null) }
     }
 }

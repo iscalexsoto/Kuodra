@@ -148,6 +148,41 @@ fun MovementDetailScreen(
             }
         }
 
+        // desglose (partidas + ajuste)
+        if (m.items.isNotEmpty()) {
+            Column(
+                Modifier.fillMaxWidth().padding(top = 14.dp).clip(Kuodra.shape.xl)
+                    .background(c.surface).border(1.dp, c.line, Kuodra.shape.xl)
+                    .padding(horizontal = 16.dp, vertical = 11.dp),
+            ) {
+                Text("DESGLOSE", style = Kuodra.type.overline, color = c.ink3,
+                    modifier = Modifier.padding(bottom = 4.dp))
+                m.items.forEach { item ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(item.concept.ifBlank { "Sin concepto" }, style = Kuodra.type.body,
+                            color = c.ink, modifier = Modifier.weight(1f))
+                        Text(item.amount, style = Kuodra.type.heading, color = c.ink2)
+                    }
+                    MetaDivider(c)
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Ajuste", style = Kuodra.type.body, color = c.ink)
+                        Text("Total no detallado", style = Kuodra.type.caption, color = c.ink3)
+                    }
+                    Text(m.adjustment ?: "", style = Kuodra.type.heading, color = c.ink2)
+                }
+            }
+        }
+
         // actions
         Spacer(Modifier.height(18.dp))
         if (!state.confirmDelete) {

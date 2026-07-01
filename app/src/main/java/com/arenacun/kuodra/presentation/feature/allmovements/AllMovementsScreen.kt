@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,10 +24,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -40,6 +37,8 @@ import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.component.CategoryTag
 import com.arenacun.kuodra.presentation.component.Chevron
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
+import com.arenacun.kuodra.presentation.component.KuodraSearchField
+import com.arenacun.kuodra.presentation.component.SearchGlyph
 import com.arenacun.kuodra.presentation.component.ToneAvatar
 import com.arenacun.kuodra.presentation.theme.Kuodra
 import com.arenacun.kuodra.presentation.theme.KuodraColors
@@ -176,26 +175,12 @@ private fun SearchOverlay(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             BackCircle(onClick = onClose)
-            Row(
-                Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.surface2)
-                    .border(1.dp, c.line, Kuodra.shape.lg).padding(horizontal = 14.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                SearchGlyph(16.dp, c.ink3)
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQuery,
-                    singleLine = true,
-                    textStyle = Kuodra.type.body.copy(color = c.ink),
-                    cursorBrush = SolidColor(c.primary),
-                    modifier = Modifier.weight(1f),
-                    decorationBox = { inner ->
-                        if (query.isEmpty()) Text("Buscar movimiento…", style = Kuodra.type.body, color = c.ink3)
-                        inner()
-                    },
-                )
-            }
+            KuodraSearchField(
+                value = query,
+                onValueChange = onQuery,
+                placeholder = "Buscar movimiento…",
+                modifier = Modifier.weight(1f),
+            )
         }
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState())
@@ -278,18 +263,6 @@ private fun IconButtonCircle(c: KuodraColors, onClick: () -> Unit, content: @Com
 private fun <T> WrapChips(items: List<T>, item: @Composable (T) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items.forEach { item(it) }
-    }
-}
-
-@Composable
-private fun SearchGlyph(size: Dp, color: Color) {
-    Canvas(Modifier.size(size)) {
-        val r = this.size.minDimension * 0.32f
-        val cx = this.size.width * 0.42f
-        val cy = this.size.height * 0.42f
-        drawCircle(color, radius = r, center = Offset(cx, cy), style = Stroke(width = size.toPx() * 0.12f))
-        drawLine(color, Offset(cx + r * 0.8f, cy + r * 0.8f),
-            Offset(this.size.width * 0.86f, this.size.height * 0.86f), strokeWidth = size.toPx() * 0.12f)
     }
 }
 

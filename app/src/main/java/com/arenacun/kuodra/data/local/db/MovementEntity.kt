@@ -24,6 +24,8 @@ data class MovementEntity(
     val date: LocalDate,
     val payer: String?,
     val splitNames: List<String>,
+    /** Desglose en partidas serializado como JSON (`[]` = sin detalle). */
+    val itemsJson: String = "[]",
     val updatedAt: Long,
     val deleted: Boolean,
     val dirty: Boolean,
