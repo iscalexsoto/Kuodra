@@ -6,6 +6,8 @@ import com.arenacun.kuodra.di.appModule
 import com.arenacun.kuodra.di.dataModule
 import com.arenacun.kuodra.di.networkModule
 import com.arenacun.kuodra.di.presentationModule
+import com.arenacun.kuodra.di.telemetryModule
+import com.arenacun.kuodra.domain.telemetry.Telemetry
 import com.arenacun.kuodra.presentation.crash.CrashHandler
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
@@ -23,10 +25,16 @@ class KuodraApplication : Application() {
             val koin = startKoin {
                 androidLogger()
                 androidContext(this@KuodraApplication)
-                modules(appModule, networkModule, dataModule, presentationModule)
+                modules(appModule, networkModule, dataModule, telemetryModule, presentationModule)
             }.koin
             // Sincronización periódica de respaldo (la sesión se valida dentro del worker).
             koin.get<WorkManagerSyncTrigger>().schedulePeriodic()
+            // Observabilidad: conectar el reporte de crashes y vaciar la cola pendiente (incluye los
+            // crashes persistidos en disco del arranque anterior).
+            koin.get<Telemetry>().let { telemetry ->
+                CrashHandler.attachTelemetry(telemetry)
+                telemetry.flush()
+            }
         }
     }
 }

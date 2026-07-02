@@ -59,13 +59,14 @@ val dataModule = module {
     single { get<KuodraDatabase>().categoryDao() }
     single { get<KuodraDatabase>().budgetDao() }
     single { get<KuodraDatabase>().periodSnapshotDao() }
+    single { get<KuodraDatabase>().telemetryDao() }
 
     // Sincronización (push/pull + agendado con WorkManager)
     single { SyncCursorStore(get()) }
     single { WorkManagerSyncTrigger(androidContext()) } bind SyncTrigger::class
     single { SyncManager(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 
-    single { AuthRepositoryImpl(get(), get(), get()) } bind AuthRepository::class
+    single { AuthRepositoryImpl(get(), get(), get(), get()) } bind AuthRepository::class
     single { SpaceRepositoryImpl(get()) } bind SpaceRepository::class
     single { CategoryRepositoryImpl(get(), get(), get()) } bind CategoryRepository::class
     single { MovementRepositoryImpl(get(), get(), get(), get()) } bind MovementRepository::class

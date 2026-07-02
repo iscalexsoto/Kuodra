@@ -53,9 +53,10 @@ terminología, **no** el styling. Lo controla `Space.useCase` + `terminologyFor(
 
 ```
 com.arenacun.kuodra
-  KuodraApplication.kt          # startKoin(appModule, networkModule, dataModule, presentationModule)
+  KuodraApplication.kt          # startKoin(appModule, networkModule, dataModule, telemetryModule, presentationModule)
+                                #   + conecta CrashHandler↔Telemetry y hace flush() de telemetría al arrancar
   MainActivity.kt               # setContent { KuodraRoot() }
-  di/                           # AppModule, NetworkModule, DataModule, PresentationModule
+  di/                           # AppModule, NetworkModule, DataModule, TelemetryModule, PresentationModule
   domain/
     model/
       UseCase.kt                # enum + Terminology + terminologyFor()
@@ -73,6 +74,9 @@ com.arenacun.kuodra
     repository/
       AuthRepository, SpaceRepository, MovementRepository, SummaryRepository,
       PreferencesRepository, SettingsRepository
+    telemetry/
+      Telemetry.kt             # PUERTO NEUTRAL de observabilidad (breadcrumb/log/capture/setUser/flush)
+                               #   + LogLevel + NoOpTelemetry. Impl detrás; swap a Sentry = otra impl
   data/
     local/
       KuodraSeedSource          # seed in-memory: movimientos, personas, categorías, settings, historial
@@ -81,7 +85,14 @@ com.arenacun.kuodra
     remote/
       PocketBaseClient          # HttpClient Ktor (OkHttp, JSON tolerante) + URLs de la colección users
       AuthApi / KtorAuthApi     # request-otp / auth-with-otp / records (alta) / auth-refresh
-      dto/AuthDtos              # DTOs @Serializable de auth
+      TelemetryApi / KtorTelemetryApi  # POST a la colección telemetry_events (create rule autenticada)
+      dto/AuthDtos, dto/TelemetryDtos  # DTOs @Serializable (auth; TelemetryRecord/BreadcrumbDto/EventDto)
+    telemetry/                  # impl PocketBase del puerto Telemetry (ver "Observabilidad" abajo)
+      PocketBaseTelemetry       # ring buffer de breadcrumbs + arma eventos → cola Room → TelemetryTrigger
+      TelemetryUploader         # motor de entrega puro: drena spool, sube por lotes si hay sesión
+      TelemetryUploadWorker / WorkManagerTelemetryTrigger  # WorkManager (patrón SyncWorker)
+      CrashSpool                # spool en disco para crashes fatales (síncrono, a prueba de muerte)
+      DeviceContextProvider, BreadcrumbBuffer, TelemetryMapper
     repository/                 # *RepositoryImpl (AuthRepositoryImpl real; Space/Preferences en DataStore)
   presentation/
     KuodraRoot.kt, navigation/ (Destinations, KuodraNavHost)
@@ -174,6 +185,22 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
   (mientras tanto, `Splash`).
 - El `UseCase` elegido en onboarding y el tema oscuro se **persisten en DataStore** (sobreviven reinicios).
 - Google OAuth: **diferido** (botón "Próximamente" deshabilitado en `WelcomeScreen`).
+
+### Observabilidad (telemetría remota, casera sobre PocketBase)
+- Todo pasa por el **puerto neutral** `domain/telemetry/Telemetry` (breadcrumbs, `log`, `capture`,
+  `captureFatalBlocking`, `setUser`, `flush`). Pantallas/repos **solo** dependen de esa interfaz;
+  el default es `NoOpTelemetry`. **Migrar a Sentry** = crear `SentryTelemetry : Telemetry` y cambiar
+  el binding en `TelemetryModule` — cero cambios en call sites.
+- Impl `PocketBaseTelemetry`: mantiene un ring buffer de breadcrumbs y adjunta contexto de dispositivo;
+  cada evento va a la **cola durable en Room** (`telemetry_events`) y se sube con `TelemetryUploader`
+  (patrón `SyncManager`) vía `TelemetryUploadWorker` (WorkManager, con red).
+- **Offline + pre-login:** los eventos se encolan siempre y se suben **solo cuando hay sesión** (la
+  colección tiene create rule autenticada); los pre-login se atribuyen al usuario al hacer login
+  (`flush()` en `verifyOtp`). **Crashes fatales:** se persisten síncronos en `CrashSpool` (disco) desde
+  `CrashHandler` y se suben en el siguiente arranque.
+- La telemetría **nunca debe tumbar la app**: toda operación de la impl es best-effort (no lanza).
+- **Requiere una colección `telemetry_events` en PocketBase.** El esquema y las reglas están en
+  [`POCKETBASE.md`](POCKETBASE.md) (fuente única de la config del servidor).
 
 ### Datos y "hoy"
 - El seed (`KuodraSeedSource`) ahora incluye `date: LocalDate` real en cada movimiento, los `SpaceSettings`

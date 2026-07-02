@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.CalcKey
-import com.arenacun.kuodra.domain.model.CalcState
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.repository.SettingsRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
@@ -43,7 +42,7 @@ class ReplenishViewModel(
 
     fun onNoteChange(v: String) = _uiState.update { it.copy(note = v) }
 
-    fun onOpenCalculator() = _uiState.update { it.copy(showCalculator = true, calc = CalcState()) }
+    fun onOpenCalculator() = _uiState.update { it.copy(showCalculator = true, calc = Calc.initial(it.amount)) }
     fun onCalcKey(key: CalcKey) = _uiState.update { it.copy(calc = Calc.press(it.calc, key)) }
     fun onDismissCalculator() = _uiState.update { it.copy(showCalculator = false) }
     fun onConfirmAmount() = _uiState.update { it.copy(amount = it.calc.result ?: it.amount, showCalculator = false) }

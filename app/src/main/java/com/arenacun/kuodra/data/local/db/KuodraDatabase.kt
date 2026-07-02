@@ -14,10 +14,12 @@ import androidx.room.TypeConverters
         CategoryEntity::class,
         BudgetEntity::class,
         PeriodSnapshotEntity::class,
+        TelemetryEventEntity::class,
     ],
-    // v5: nueva columna `itemsJson` en `movements` (desglose en partidas). El bump fuerza la
-    // migración destructiva ya configurada; el sync repuebla desde PocketBase tras limpiar.
-    version = 5,
+    // v6: nueva tabla `telemetry_events` (cola de observabilidad remota). El bump fuerza la
+    // migración destructiva ya configurada; el sync repuebla los datos desde PocketBase tras limpiar
+    // (la telemetría pendiente que se pierda es aceptable: es diagnóstico best-effort).
+    version = 6,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -26,4 +28,5 @@ abstract class KuodraDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
     abstract fun budgetDao(): BudgetDao
     abstract fun periodSnapshotDao(): PeriodSnapshotDao
+    abstract fun telemetryDao(): TelemetryDao
 }

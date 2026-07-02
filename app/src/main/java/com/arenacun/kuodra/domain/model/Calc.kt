@@ -13,8 +13,13 @@ enum class CalcKey { N0, N1, N2, N3, N4, N5, N6, N7, N8, N9, Dot, Plus, Minus, T
 /**
  * Estado inmutable de la calculadora. [expression] guarda la expresión en ASCII
  * (`+ - * /`); [display] la presenta con los signos del prototipo (× ÷ −).
+ *
+ * [fresh] marca que [expression] es un valor **cargado/resuelto** pendiente de
+ * sobrescribir: al pulsar el siguiente dígito se reemplaza en vez de concatenar
+ * (comportamiento de calculadora real). Solo afecta a [Calc.press]; [display] y
+ * [result] dependen únicamente de [expression].
  */
-data class CalcState(val expression: String = "") {
+data class CalcState(val expression: String = "", val fresh: Boolean = false) {
 
     /** Texto grande del display: el resultado si la expresión está resuelta, o la expresión. */
     val display: String
@@ -36,14 +41,27 @@ object Calc {
     fun press(state: CalcState, key: CalcKey): CalcState = when (key) {
         CalcKey.Clear -> CalcState()
         CalcKey.Back -> CalcState(state.expression.dropLast(1))
-        CalcKey.Equals -> state.result?.let { CalcState(trimNumber(it)) } ?: state
-        CalcKey.Dot -> appendDot(state)
-        CalcKey.Plus -> appendOperator(state, '+')
-        CalcKey.Minus -> appendOperator(state, '-')
-        CalcKey.Times -> appendOperator(state, '*')
-        CalcKey.Div -> appendOperator(state, '/')
-        else -> appendDigit(state, digitOf(key))
+        // Colapsa al resultado y lo deja "fresh": el próximo dígito lo sobrescribe.
+        CalcKey.Equals -> state.result?.let { CalcState(trimNumber(it), fresh = true) } ?: state
+        // Con valor cargado, el punto empieza un decimal nuevo ("0."); si no, añade al número.
+        CalcKey.Dot -> if (state.fresh) CalcState("0.") else appendDot(state)
+        CalcKey.Plus -> appendOperator(state.edited(), '+')
+        CalcKey.Minus -> appendOperator(state.edited(), '-')
+        CalcKey.Times -> appendOperator(state.edited(), '*')
+        CalcKey.Div -> appendOperator(state.edited(), '/')
+        // Con un valor cargado (fresh), el primer dígito reemplaza en vez de concatenar.
+        else -> if (state.fresh) CalcState(digitOf(key).toString()) else appendDigit(state, digitOf(key))
     }
+
+    /**
+     * Estado inicial precargado con [value]: muestra el valor a editar y queda `fresh`
+     * (el primer dígito lo reemplaza). Vacío/cero ⇒ [CalcState] limpio (se escribe desde cero).
+     */
+    fun initial(value: Double?): CalcState =
+        if (value == null || value == 0.0) CalcState() else CalcState(trimNumber(value), fresh = true)
+
+    /** Descarta la bandera `fresh` para continuar editando la expresión cargada (operadores, punto). */
+    private fun CalcState.edited(): CalcState = if (fresh) copy(fresh = false) else this
 
     private fun digitOf(key: CalcKey): Char = when (key) {
         CalcKey.N0 -> '0'; CalcKey.N1 -> '1'; CalcKey.N2 -> '2'; CalcKey.N3 -> '3'

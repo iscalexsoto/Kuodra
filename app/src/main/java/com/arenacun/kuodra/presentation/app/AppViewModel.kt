@@ -6,6 +6,7 @@ import com.arenacun.kuodra.domain.model.Session
 import com.arenacun.kuodra.domain.repository.AuthRepository
 import com.arenacun.kuodra.domain.repository.PreferencesRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
+import com.arenacun.kuodra.domain.telemetry.Telemetry
 import com.arenacun.kuodra.presentation.navigation.Destination
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +21,7 @@ class AppViewModel(
     preferences: PreferencesRepository,
     private val authRepository: AuthRepository,
     private val spaceRepository: SpaceRepository,
+    private val telemetry: Telemetry,
 ) : ViewModel() {
 
     val darkTheme: StateFlow<Boolean> = preferences.darkTheme
@@ -30,7 +32,9 @@ class AppViewModel(
     init {
         viewModelScope.launch {
             val session = authRepository.restoreSession()
-            _start.value = resolveStartState(session, spaceRepository.isConfigured())
+            val state = resolveStartState(session, spaceRepository.isConfigured())
+            telemetry.breadcrumb("app", "startState", mapOf("state" to state.name))
+            _start.value = state
         }
     }
 }

@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.CalcKey
-import com.arenacun.kuodra.domain.model.CalcState
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
@@ -81,7 +80,7 @@ class AddMovementViewModel(
     fun onPickDate(date: LocalDate) = _uiState.update { it.copy(date = date, showCalendar = false) }
 
     // ---- Calculadora ----
-    fun onOpenCalculator() = _uiState.update { it.copy(showCalculator = true, calc = CalcState()) }
+    fun onOpenCalculator() = _uiState.update { it.copy(showCalculator = true, calc = Calc.initial(it.amount)) }
     fun onCalcKey(key: CalcKey) = _uiState.update { it.copy(calc = Calc.press(it.calc, key)) }
     fun onDismissCalculator() = _uiState.update { it.copy(showCalculator = false) }
     fun onConfirmAmount() = _uiState.update { st ->
@@ -117,13 +116,8 @@ class AddMovementViewModel(
     // ---- Teclado numérico (cantidad de una partida) ----
     fun onOpenItemPad(id: String) = _uiState.update { st ->
         val cents = st.items.firstOrNull { it.id == id }?.amount?.cents ?: 0L
-        // Precarga la expresión con el monto actual (sin decimales sobrantes si es entero).
-        val expr = when {
-            cents == 0L -> ""
-            cents % 100 == 0L -> (cents / 100).toString()
-            else -> (cents / 100.0).toString()
-        }
-        st.copy(showNumberPad = true, editingItemId = id, pad = CalcState(expr))
+        // Precarga el monto actual como valor a editar (fresh); vacío si es cero.
+        st.copy(showNumberPad = true, editingItemId = id, pad = Calc.initial(cents / 100.0))
     }
     fun onPadKey(key: CalcKey) = _uiState.update { it.copy(pad = Calc.press(it.pad, key)) }
     fun onDismissPad() = _uiState.update { it.copy(showNumberPad = false, editingItemId = null) }

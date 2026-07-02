@@ -109,7 +109,14 @@ class SettingsViewModel(
     }
 
     // ---- Calculadora de monto (presupuesto / fondo) ----
-    fun onOpenCalc(target: CalcTarget) = local.update { it.copy(calcTarget = target, calc = CalcState()) }
+    fun onOpenCalc(target: CalcTarget) = local.update {
+        // Precarga el monto actual del objetivo como valor a editar (fresh).
+        val text = when (target) {
+            CalcTarget.Budget -> it.budgetEdit?.amount ?: current().budget?.amount
+            CalcTarget.Fund -> current().fund?.initial
+        }
+        it.copy(calcTarget = target, calc = Calc.initial(text?.let(Calc::parseAmount)))
+    }
     fun onCalcKey(key: CalcKey) = local.update { it.copy(calc = Calc.press(it.calc, key)) }
     fun onDismissCalc() = local.update { it.copy(calcTarget = null) }
     fun onConfirmCalc() {

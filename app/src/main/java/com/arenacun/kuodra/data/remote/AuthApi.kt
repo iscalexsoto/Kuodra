@@ -63,7 +63,11 @@ class KtorAuthApi(
 
     override suspend fun authRefresh(token: String): AuthResponse =
         client.http.post(client.collectionUrl("auth-refresh")) {
+            jsonBody()
             pocketBaseAuth(token)
+            // Cuerpo JSON vacío: sin esto OkHttp manda el POST sin Content-Type y en
+            // chunked, y PocketBase responde 400 "Unsupported Content-Type".
+            setBody(emptyMap<String, String>())
         }.body()
 
     override suspend fun updateUser(userId: String, name: String, token: String): UserRecordDto =

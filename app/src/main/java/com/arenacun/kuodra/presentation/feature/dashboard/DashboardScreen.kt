@@ -70,7 +70,7 @@ fun DashboardScreen(
         Column(Modifier.fillMaxSize()) {
             // ===== Top app bar =====
             Row(
-                Modifier.fillMaxWidth().background(c.surface)
+                Modifier.fillMaxWidth().background(c.screenBg)
                     .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
