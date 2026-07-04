@@ -35,11 +35,18 @@ class MovementDetailViewModel(
     val deleted = _deleted.receiveAsFlow()
 
     init {
+        // Observa el flujo (no carga one-shot) para reflejar ediciones al volver del formulario.
+        // Al borrar, el flujo emite sin el movimiento antes del popBackStack: se retiene el último
+        // no nulo para evitar el flash de "no encontrado"; ese estado solo aplica si ya la
+        // primera emisión viene sin el movimiento.
         viewModelScope.launch {
             val categories = summaryRepository.categories().associateBy { it.id }
-            val movement = movementRepository.movement(useCase, id)
-                ?.toUi(categories, useCase, LocalDate.now())
-            _uiState.update { it.copy(movement = movement, loading = false) }
+            movementRepository.movements(useCase).collect { list ->
+                val movement = list.find { it.id == id }?.toUi(categories, useCase, LocalDate.now())
+                _uiState.update { st ->
+                    st.copy(movement = movement ?: st.movement, loading = false)
+                }
+            }
         }
     }
 

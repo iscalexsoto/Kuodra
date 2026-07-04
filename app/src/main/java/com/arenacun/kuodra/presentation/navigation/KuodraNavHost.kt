@@ -29,9 +29,12 @@ import com.arenacun.kuodra.presentation.feature.onboarding.CreateSpaceScreen
 import com.arenacun.kuodra.presentation.feature.onboarding.ModeScreen
 import com.arenacun.kuodra.presentation.feature.onboarding.NameScreen
 import com.arenacun.kuodra.presentation.feature.replenish.ReplenishScreen
+import com.arenacun.kuodra.presentation.feature.scan.ScanDraftViewModel
+import com.arenacun.kuodra.presentation.feature.scan.ScanTicketScreen
 import com.arenacun.kuodra.presentation.feature.settings.SettingsScreen
 import com.arenacun.kuodra.presentation.feature.settle.SettleScreen
 import org.koin.androidx.compose.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 @Composable
 fun KuodraNavHost(
@@ -113,7 +116,8 @@ fun KuodraNavHost(
         // ===== App =====
         composable<Destination.Dashboard> {
             DashboardScreen(
-                onAddMovement = { navController.navigate(Destination.AddMovement) },
+                onAddManual = { navController.navigate(Destination.AddMovement()) },
+                onScanTicket = { source -> navController.navigate(Destination.ScanTicket(source)) },
                 onOpenMovement = { id -> navController.navigate(Destination.MovementDetail(id)) },
                 onSeeAllMovements = { navController.navigate(Destination.AllMovements) },
                 onOpenSettings = { navController.navigate(Destination.Settings) },
@@ -132,7 +136,6 @@ fun KuodraNavHost(
         composable<Destination.Settings> {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onOpenHistory = { navController.navigate(Destination.History) },
                 onOpenCategories = { navController.navigate(Destination.Categories) },
                 onSignedOut = {
                     navController.navigate(Destination.AuthGraph) {
@@ -172,13 +175,43 @@ fun KuodraNavHost(
                 movementId = args.id,
                 onBack = { navController.popBackStack() },
                 onDeleted = { navController.popBackStack() },
+                onEdit = { id -> navController.navigate(Destination.AddMovement(editId = id)) },
             )
         }
-        composable<Destination.AddMovement> {
-            AddMovementScreen(
-                onBack = { navController.popBackStack() },
-                onSaved = { navController.popBackStack() },
-            )
+        // ===== Alta de movimiento (grafo anidado: comparte ScanDraftViewModel) =====
+        // "Capturar manualmente" navega directo a AddMovement (el grafo se crea solo y el draft
+        // queda vacío); el escaneo pasa por ScanTicket, que deja el TicketScan en el draft.
+        navigation<Destination.AddGraph>(startDestination = Destination.AddMovement()) {
+            composable<Destination.ScanTicket> { entry ->
+                val args = entry.toRoute<Destination.ScanTicket>()
+                val draftViewModel = entry.sharedScanDraftViewModel(navController)
+                ScanTicketScreen(
+                    viewModel = koinViewModel { parametersOf(args.source) },
+                    onBack = { navController.popBackStack() },
+                    // La pantalla de escaneo no queda en el back stack: volver desde el
+                    // formulario regresa al dashboard, no a la cámara.
+                    onScanned = { scan ->
+                        draftViewModel.set(scan)
+                        navController.navigate(Destination.AddMovement()) {
+                            popUpTo<Destination.ScanTicket> { inclusive = true }
+                        }
+                    },
+                    onFallbackToManual = {
+                        navController.navigate(Destination.AddMovement()) {
+                            popUpTo<Destination.ScanTicket> { inclusive = true }
+                        }
+                    },
+                )
+            }
+            composable<Destination.AddMovement> { entry ->
+                val args = entry.toRoute<Destination.AddMovement>()
+                AddMovementScreen(
+                    draftViewModel = entry.sharedScanDraftViewModel(navController),
+                    onBack = { navController.popBackStack() },
+                    onSaved = { navController.popBackStack() },
+                    viewModel = koinViewModel { parametersOf(args.editId) },
+                )
+            }
         }
     }
 }
@@ -187,5 +220,12 @@ fun KuodraNavHost(
 @Composable
 private fun NavBackStackEntry.sharedAuthViewModel(navController: NavHostController): AuthViewModel {
     val parentEntry = remember(this) { navController.getBackStackEntry<Destination.AuthGraph>() }
+    return koinViewModel(viewModelStoreOwner = parentEntry)
+}
+
+/** ScanDraftViewModel compartido entre Scan y AddMovement (scope = AddGraph). */
+@Composable
+private fun NavBackStackEntry.sharedScanDraftViewModel(navController: NavHostController): ScanDraftViewModel {
+    val parentEntry = remember(this) { navController.getBackStackEntry<Destination.AddGraph>() }
     return koinViewModel(viewModelStoreOwner = parentEntry)
 }

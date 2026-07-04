@@ -1,6 +1,7 @@
 package com.arenacun.kuodra.presentation.navigation
 
 import com.arenacun.kuodra.domain.model.UseCase
+import com.arenacun.kuodra.domain.scan.ScanSource
 import kotlinx.serialization.Serializable
 
 /**
@@ -25,7 +26,12 @@ sealed interface Destination {
     // --- App ---
     @Serializable data object Dashboard : Destination
     @Serializable data class MovementDetail(val id: String) : Destination
-    @Serializable data object AddMovement : Destination
+
+    /** Grafo anidado del alta de movimiento; comparte el ScanDraftViewModel entre Scan y Add. */
+    @Serializable data object AddGraph : Destination
+    /** Alta de movimiento; con [editId] carga un movimiento existente y guarda como edición. */
+    @Serializable data class AddMovement(val editId: String? = null) : Destination
+    @Serializable data class ScanTicket(val source: ScanSource) : Destination
     @Serializable data object AllMovements : Destination
     @Serializable data object Settings : Destination
     @Serializable data object Categories : Destination

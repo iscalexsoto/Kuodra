@@ -15,8 +15,10 @@ import com.arenacun.kuodra.data.remote.PeriodSnapshotApi
 /**
  * Motor de sincronización (Kotlin puro, testeable). Por colección: **push** de las filas `dirty`
  * (crea o actualiza en PocketBase) y luego **pull** de los deltas (`updated > cursor`), haciendo
- * upsert en Room con *last-write-wins* (no pisa filas con cambios locales pendientes) y respetando
- * los tombstones (`deleted`). WorkManager solo lo dispara; aquí vive toda la lógica.
+ * upsert en Room con *last-write-wins* (no pisa filas con cambios locales pendientes ni filas que
+ * ya están en la versión remota — `remoteUpdated` — para que el pull de la misma corrida no
+ * re-escriba lo recién subido) y respetando los tombstones (`deleted`). WorkManager solo lo
+ * dispara; aquí vive toda la lógica.
  */
 class SyncManager(
     private val movementApi: MovementApi,
@@ -65,7 +67,10 @@ class SyncManager(
         val since = cursors.get(CATEGORIES)
         var max = since
         categoryApi.list(since, token).forEach { dto ->
-            if (categoryDao.find(dto.id)?.dirty != true) categoryDao.upsert(dto.toEntity(owner))
+            val local = categoryDao.find(dto.id)
+            if (local?.dirty != true && local?.remoteUpdated != dto.updated) {
+                categoryDao.upsert(dto.toEntity(owner))
+            }
             if (dto.updated > max) max = dto.updated
         }
         if (max != since) cursors.set(CATEGORIES, max)
@@ -85,7 +90,13 @@ class SyncManager(
         val remote = movementApi.list(since, token)
         android.util.Log.d("KuodraSync", "movements push=${dirty.size} pull=${remote.size} since='$since'")
         remote.forEach { dto ->
-            if (movementDao.find(dto.id)?.dirty != true) movementDao.upsert(dto.toEntity(owner))
+            // No pisar filas con cambios locales pendientes NI filas que ya están en la versión
+            // remota (el push de esta misma corrida): si el servidor ignorara un campo del DTO
+            // (p. ej. una columna aún no creada), el re-upsert borraría el dato local.
+            val local = movementDao.find(dto.id)
+            if (local?.dirty != true && local?.remoteUpdated != dto.updated) {
+                movementDao.upsert(dto.toEntity(owner))
+            }
             if (dto.updated > max) max = dto.updated
         }
         if (max != since) cursors.set(MOVEMENTS, max)
@@ -105,7 +116,10 @@ class SyncManager(
         val remote = budgetApi.list(since, token)
         android.util.Log.d("KuodraSync", "budgets push=${dirty.size} pull=${remote.size}")
         remote.forEach { dto ->
-            budgetDao.upsert(dto.toEntity(owner))
+            val local = budgetDao.find(owner)
+            if (local?.dirty != true && local?.remoteUpdated != dto.updated) {
+                budgetDao.upsert(dto.toEntity(owner))
+            }
             if (dto.updated > max) max = dto.updated
         }
         if (max != since) cursors.set(BUDGETS, max)
@@ -125,7 +139,10 @@ class SyncManager(
         val remote = snapshotApi.list(since, token)
         android.util.Log.d("KuodraSync", "period_snapshots push=${dirty.size} pull=${remote.size}")
         remote.forEach { dto ->
-            if (snapshotDao.find(dto.id)?.dirty != true) snapshotDao.upsert(dto.toEntity(owner))
+            val local = snapshotDao.find(dto.id)
+            if (local?.dirty != true && local?.remoteUpdated != dto.updated) {
+                snapshotDao.upsert(dto.toEntity(owner))
+            }
             if (dto.updated > max) max = dto.updated
         }
         if (max != since) cursors.set(SNAPSHOTS, max)

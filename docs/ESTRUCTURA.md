@@ -22,8 +22,8 @@ cableadas en [`navigation/KuodraNavHost.kt`](../app/src/main/java/com/arenacun/k
 | `Name` | onboarding: captura el nombre del usuario | — | tras OTP (o al arrancar sin nombre) |
 | `Mode` / `CreateSpace(useCase)` | onboarding | `isMode`/`isCreate` | tras `Name` |
 | `Dashboard` | dashboard | `scrDashboard` | raíz de app |
-| `AddMovement` | alta de movimiento | `scrAdd` | FAB "Agregar" |
-| `MovementDetail(id)` | detalle | `scrMovDetail` | fila de movimiento |
+| `AddGraph` → `AddMovement(editId?)`/`ScanTicket(source)` | alta **y edición** de movimiento (grafo anidado; comparte `ScanDraftViewModel`) | `scrAdd` | FAB "Agregar" → sheet de 3 opciones; Detalle → "Editar" (con `editId`) |
+| `MovementDetail(id)` | detalle (reactivo: refleja ediciones al volver) | `scrMovDetail` | fila de movimiento |
 | `AllMovements` | ver todo (búsqueda/filtros) | `scrVerTodo` | "Ver todo" del dashboard |
 | `Settings` | ajustes adaptativos | `scr*Settings` | menú → "Ajustes" |
 | `Categories` | gestión de categorías (buscador) | — | Ajustes → "Categorías" |
@@ -39,7 +39,8 @@ cableadas en [`navigation/KuodraNavHost.kt`](../app/src/main/java/com/arenacun/k
   del espacio (botón ···, filas según caso de uso: compartir resumen/corte, ajustes, cerrar periodo,
   historial, reponer, salir), más sus sheets disparados (`Share`/`Shared`, `PCloseConfirm`/`PClosed`) y
   el **flujo salir/archivar grupo** (overlay inline de 3 pasos `LeaveStep`, patrón `confirmDelete`). El
-  toggle de tema oscuro vive en `Settings` (no en el menú).
+  toggle de tema oscuro vive en `Settings` (no en el menú). El FAB "Agregar" abre el sheet
+  **`AddOptions`** (`AddOptionsSheetContent`): escanear ticket / tomar de la galería / capturar manual.
 - En `AllMovements`: **overlay de búsqueda** (pantalla completa) y **sheet de filtros**.
 - En `Settings`: calculadora de monto (presupuesto/fondo) y sheet de **agregar/editar contacto**.
 - En `HistoryDetail`: flujo **reenviar corte** (`reshare` → `shared`).
@@ -69,8 +70,15 @@ com.arenacun.kuodra
       DateLabels.kt            # formateo puro de fechas ("Hoy · 20 jun", "Martes · 18 jun")
       SpaceSettings.kt         # BudgetConfig (día por frecuencia)/FundConfig/BudgetFrequency + SpaceSettings
       SettlementRecord.kt      # registro de corte/liquidación + SettlementLine
+    scan/
+      TicketScan.kt            # ScanSource, TicketParseSource, ParsedTicket(+Item), TicketScan
+      OcrEngine.kt             # puerto de OCR (impl MLKit en data); Uri como String
+      TicketParser.kt          # eslabón de la cadena de parseo (null ⇒ pasa al siguiente)
+      OcrNormalizer.kt         # PUNTO ÚNICO de normalización del raw OCR (función pura)
+      RegexTicketParser.kt     # fallback local puro (total/fecha/comercio/items por heurísticas)
     usecase/
       MovementQuery.kt         # filter() + groupByDay() puros (búsqueda/filtros/agrupación)
+      ScanTicketUseCase.kt     # orquestador: OCR → normalize → cadena [Mistral, Regex]
     repository/
       AuthRepository, SpaceRepository, MovementRepository, SummaryRepository,
       PreferencesRepository, SettingsRepository
@@ -86,13 +94,18 @@ com.arenacun.kuodra
       PocketBaseClient          # HttpClient Ktor (OkHttp, JSON tolerante) + URLs de la colección users
       AuthApi / KtorAuthApi     # request-otp / auth-with-otp / records (alta) / auth-refresh
       TelemetryApi / KtorTelemetryApi  # POST a la colección telemetry_events (create rule autenticada)
+      TicketAnalysisApi / KtorTicketAnalysisApi  # POST /api/kuodra/analyze-ticket (proxy Mistral, timeout 15s)
       dto/AuthDtos, dto/TelemetryDtos  # DTOs @Serializable (auth; TelemetryRecord/BreadcrumbDto/EventDto)
+      dto/ScanDtos                     # TicketAnalysisRequest/Dto (respuesta versionada del proxy)
     telemetry/                  # impl PocketBase del puerto Telemetry (ver "Observabilidad" abajo)
       PocketBaseTelemetry       # ring buffer de breadcrumbs + arma eventos → cola Room → TelemetryTrigger
       TelemetryUploader         # motor de entrega puro: drena spool, sube por lotes si hay sesión
       TelemetryUploadWorker / WorkManagerTelemetryTrigger  # WorkManager (patrón SyncWorker)
       CrashSpool                # spool en disco para crashes fatales (síncrono, a prueba de muerte)
       DeviceContextProvider, BreadcrumbBuffer, TelemetryMapper
+    scan/
+      MlKitOcrEngine            # impl del puerto OcrEngine (MLKit text-recognition BUNDLED, offline)
+      MistralTicketParser       # eslabón remoto: proxy PocketBase→Mistral; cualquier fallo ⇒ null (cae a regex)
     repository/                 # *RepositoryImpl (AuthRepositoryImpl real; Space/Preferences en DataStore)
   presentation/
     KuodraRoot.kt, navigation/ (Destinations, KuodraNavHost)
@@ -108,11 +121,14 @@ com.arenacun.kuodra
       KuodraNumberPad          # teclado numérico ligero (solo dígitos/punto/borrar, sin operadores; reusa Calc)
       KuodraCalendar           # calendario (dibuja CalendarMonth, mes visible = remember)
       KuodraBottomSheet        # wrapper de ModalBottomSheet con tokens Kuodra
+      AddOptionsSheetContent   # sheet "Agregar": escanear (ic_camera) / galería (ic_image_up) / manual (ic_notebook)
     feature/
       auth/        AuthViewModel + AuthUiState + Welcome/Email/Otp
       onboarding/  NameViewModel, ModeViewModel, CreateSpaceViewModel + Name/Mode/CreateSpace
       dashboard/   DashboardViewModel + DashboardUiState (incl. DashboardOverlay/LeaveStep) + DashboardScreen
       movement/    AddMovement{ViewModel,UiState,Screen}, MovementDetail{ViewModel,Screen}
+      scan/        ScanDraftViewModel (holder del TicketScan, scope AddGraph),
+                   ScanTicket{UiState (ScanPhase), ViewModel, Screen} (CameraX + Photo Picker + animación)
       allmovements/AllMovements{ViewModel,UiState,Screen}
       settings/    Settings{ViewModel,UiState,Screen}  (adaptativa por caso de uso)
       categories/  Categories{ViewModel,UiState,Screen}  (catálogo + buscador, todos los casos)
@@ -201,6 +217,31 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
 - La telemetría **nunca debe tumbar la app**: toda operación de la impl es best-effort (no lanza).
 - **Requiere una colección `telemetry_events` en PocketBase.** El esquema y las reglas están en
   [`POCKETBASE.md`](POCKETBASE.md) (fuente única de la config del servidor).
+
+### Escaneo de tickets (pipeline en cadena)
+- **Flujo:** FAB "Agregar" → sheet `AddOptions` → `ScanTicket(source)` (CameraX con permiso runtime,
+  o Photo Picker sin permisos en minSdk 33) → `ScanTicketUseCase` → formulario `AddMovement`
+  pre-poblado (comercio→concepto, total→monto, fecha acotada a hoy, partidas→items). El usuario
+  **siempre** cae al formulario editable, aunque el parseo sea parcial.
+- **Pipeline:** `OcrEngine` (MLKit bundled, offline) → `OcrNormalizer.normalize()` (**punto único**
+  de manipulación del raw; toda corrección de OCR va ahí) → cadena `List<TicketParser>` en orden de
+  prioridad inyectada por DI: hoy `[MistralTicketParser, RegexTicketParser]`. Un parser devuelve
+  `null` para ceder al siguiente y **nunca lanza**. El futuro `TemplateTicketParser` (tickets de
+  comercios conocidos sin red) se inserta **al frente de la lista en `DataModule`**, sin tocar contratos.
+- **Mistral vía proxy PocketBase** (`/api/kuodra/analyze-ticket`, hook JS + `MISTRAL_API_KEY` en el
+  servidor; ver [`POCKETBASE.md`](POCKETBASE.md)): la key nunca viaja en el APK. Sin red/sesión/hook
+  ⇒ regex local, transparente para el usuario.
+- **Resultado → formulario:** `ScanDraftViewModel` compartido en el grafo `AddGraph` (patrón
+  AuthGraph); `consume()` entrega el `TicketScan` **una sola vez** y `AddMovementViewModel.applyScan`
+  lo aplica. El flujo manual navega directo a `AddMovement` con draft vacío. En **modo edición**
+  (`AddMovement(editId)`) el draft se ignora: el formulario se pre-puebla desde el movimiento
+  existente, guardar llama `MovementRepository.update` conservando id/nota/metadata de escaneo, y
+  si el `editId` no existe degrada a alta nueva.
+- **Persistencia:** el movimiento escaneado guarda `scanRawText` (raw OCR **sin normalizar**,
+  material para los templates futuros) y `scanSource` (`Camera`/`Gallery`; null = manual) en Room y
+  PocketBase.
+- La respuesta del proxy es **versionada** (`version` + campos opcionales): extensible a
+  `template` sin romper clientes.
 
 ### Datos y "hoy"
 - El seed (`KuodraSeedSource`) ahora incluye `date: LocalDate` real en cada movimiento, los `SpaceSettings`

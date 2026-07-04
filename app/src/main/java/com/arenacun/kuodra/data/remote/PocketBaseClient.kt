@@ -3,6 +3,7 @@ package com.arenacun.kuodra.data.remote
 import com.arenacun.kuodra.BuildConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.LogLevel
 import io.ktor.client.plugins.logging.Logging
@@ -35,6 +36,9 @@ class PocketBaseClient(
         install(Logging) {
             level = if (BuildConfig.DEBUG) LogLevel.INFO else LogLevel.NONE
         }
+        // Sin defaults: solo habilita fijar timeouts por petición (p. ej. el análisis de tickets,
+        // cuyo fallback regex espera una respuesta acotada). El resto de llamadas no cambia.
+        install(HttpTimeout)
     }
 
     /** URL absoluta de una colección de la API de records. */

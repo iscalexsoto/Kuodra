@@ -33,8 +33,9 @@ class KuodraSeedSource {
         deleted.value = deleted.value + id
     }
 
-    fun addMovement(useCase: UseCase, movement: Movement) {
-        val current = added.value[useCase].orEmpty()
+    /** Alta o edición: si ya existe un movimiento con el mismo id, lo reemplaza (no duplica). */
+    fun upsertMovement(useCase: UseCase, movement: Movement) {
+        val current = added.value[useCase].orEmpty().filterNot { it.id == movement.id }
         added.value = added.value + (useCase to (current + movement))
     }
 

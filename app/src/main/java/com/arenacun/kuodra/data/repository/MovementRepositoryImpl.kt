@@ -38,22 +38,24 @@ class MovementRepositoryImpl(
     override fun movements(useCase: UseCase): Flow<List<Movement>> = when (useCase) {
         UseCase.Personal -> personalMovements
         else -> combine(seed.deletedIds, seed.addedMovements) { deleted, added ->
-            (seed.baseMovements(useCase) + added[useCase].orEmpty())
+            // Added primero: la versión editada de un movimiento base gana en el dedupe.
+            (added[useCase].orEmpty() + seed.baseMovements(useCase))
+                .distinctBy { it.id }
                 .filter { it.id !in deleted }
         }
     }
 
     override suspend fun movement(useCase: UseCase, id: String): Movement? = when (useCase) {
         UseCase.Personal -> dao.find(id)?.takeIf { !it.deleted }?.toDomain()
-        else -> (seed.baseMovements(useCase) + seed.addedFor(useCase)).find { it.id == id }
+        else -> (seed.addedFor(useCase) + seed.baseMovements(useCase)).find { it.id == id }
     }
 
     override suspend fun add(useCase: UseCase, movement: Movement) {
-        if (useCase == UseCase.Personal) upsertLocal(movement) else seed.addMovement(useCase, movement)
+        if (useCase == UseCase.Personal) upsertLocal(movement) else seed.upsertMovement(useCase, movement)
     }
 
     override suspend fun update(useCase: UseCase, movement: Movement) {
-        if (useCase == UseCase.Personal) upsertLocal(movement) else seed.addMovement(useCase, movement)
+        if (useCase == UseCase.Personal) upsertLocal(movement) else seed.upsertMovement(useCase, movement)
     }
 
     override suspend fun delete(useCase: UseCase, id: String) {

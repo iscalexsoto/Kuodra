@@ -60,8 +60,9 @@ enum class LeaveStep { None, Settle, Confirm, Done }
  * - [Menu] menú de acciones del espacio actual (botón ···).
  * - [Share] opciones de compartir resumen/corte (PDF/WhatsApp); [Shared] confirmación.
  * - [PCloseConfirm] confirmación de cerrar periodo (Personal); [PClosed] éxito.
+ * - [AddOptions] las 3 vías de alta al tocar el FAB "Agregar" (escanear/galería/manual).
  */
-enum class DashboardSheet { None, Spaces, CreateSpace, Menu, Share, Shared, PCloseConfirm, PClosed }
+enum class DashboardSheet { None, Spaces, CreateSpace, Menu, Share, Shared, PCloseConfirm, PClosed, AddOptions }
 
 /** Estado de los overlays del dashboard: hoja inferior activa y flujo de archivar. */
 data class DashboardOverlay(

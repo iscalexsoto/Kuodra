@@ -29,13 +29,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.UseCase
+import com.arenacun.kuodra.domain.scan.ScanSource
 import com.arenacun.kuodra.presentation.feature.movement.MovementUi
+import com.arenacun.kuodra.presentation.component.AddOptionsSheetContent
 import com.arenacun.kuodra.presentation.component.CategoryTag
 import com.arenacun.kuodra.R
 import com.arenacun.kuodra.presentation.component.Chevron
@@ -50,7 +53,8 @@ import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun DashboardScreen(
-    onAddMovement: () -> Unit,
+    onAddManual: () -> Unit,
+    onScanTicket: (ScanSource) -> Unit,
     onOpenMovement: (String) -> Unit,
     onSeeAllMovements: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -138,7 +142,7 @@ fun DashboardScreen(
                     c, "Movimientos recientes",
                     onSeeAll = if (state.movements.isEmpty()) null else onSeeAllMovements,
                 )
-                MovementsCard(c, state.movements, onOpenMovement)
+                MovementsCard(c, state.movements, onOpenMovement, onSeeAllMovements)
             }
         }
 
@@ -146,7 +150,7 @@ fun DashboardScreen(
         Row(
             Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 24.dp)
                 .clip(Kuodra.shape.xl).background(c.primary)
-                .clickable { onAddMovement() }
+                .clickable { viewModel.onOpenAddOptions() }
                 .padding(start = 17.dp, end = 20.dp, top = 15.dp, bottom = 15.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(9.dp),
@@ -204,6 +208,15 @@ fun DashboardScreen(
         }
         DashboardSheet.PClosed -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             ClosePeriodDoneSheet(c, onClose = viewModel::onCloseSheet)
+        }
+        DashboardSheet.AddOptions -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
+            AddOptionsSheetContent(
+                c = c,
+                onScan = { viewModel.onCloseSheet(); onScanTicket(ScanSource.Camera) },
+                onGallery = { viewModel.onCloseSheet(); onScanTicket(ScanSource.Gallery) },
+                onManual = { viewModel.onCloseSheet(); onAddManual() },
+                onClose = viewModel::onCloseSheet,
+            )
         }
         DashboardSheet.None -> {}
     }
@@ -978,11 +991,15 @@ private fun CategoriesCard(c: KuodraColors, categories: List<CategoryBreakdown>)
     }
 }
 
+/** Máximo de movimientos que muestra la tarjeta "Movimientos recientes" del dashboard. */
+private const val RecentMovementsLimit = 5
+
 @Composable
 private fun MovementsCard(
     c: KuodraColors,
     movements: List<MovementUi>,
     onOpenMovement: (String) -> Unit,
+    onSeeAllMovements: () -> Unit,
 ) {
     Column(
         Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface)
@@ -992,7 +1009,8 @@ private fun MovementsCard(
             EmptyRow(c, "Sin movimientos", "Toca Agregar para registrar tu primer gasto.")
             return@Column
         }
-        movements.forEachIndexed { i, m ->
+        val shown = movements.take(RecentMovementsLimit)
+        shown.forEachIndexed { i, m ->
             Row(
                 Modifier.fillMaxWidth().clickable { onOpenMovement(m.id) }
                     .padding(horizontal = 15.dp, vertical = 13.dp),
@@ -1008,7 +1026,19 @@ private fun MovementsCard(
                 Spacer(Modifier.width(2.dp))
                 Chevron(7.dp, c.ink3)
             }
-            if (i < movements.lastIndex) Divider(c)
+            if (i < shown.lastIndex) Divider(c)
+        }
+        val extra = movements.size - shown.size
+        if (extra > 0) {
+            Divider(c)
+            Text(
+                "+$extra más",
+                style = Kuodra.type.caption,
+                color = c.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onSeeAllMovements)
+                    .padding(horizontal = 15.dp, vertical = 13.dp),
+            )
         }
     }
 }

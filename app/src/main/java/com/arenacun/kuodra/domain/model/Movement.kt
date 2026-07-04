@@ -1,5 +1,6 @@
 package com.arenacun.kuodra.domain.model
 
+import com.arenacun.kuodra.domain.scan.ScanSource
 import java.time.LocalDate
 
 /**
@@ -22,6 +23,10 @@ data class Movement(
     val splitNames: List<String> = emptyList(),
     /** Desglose interno opcional en partidas (concepto + cantidad). Vacío = sin detalle. */
     val items: List<MovementItem> = emptyList(),
+    /** Raw OCR del ticket si el movimiento nació de un escaneo (material para templates futuros). */
+    val scanRawText: String? = null,
+    /** Origen del escaneo (cámara/galería); null = captura manual. */
+    val scanSource: ScanSource? = null,
 )
 
 /**

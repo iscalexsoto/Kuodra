@@ -2,6 +2,7 @@ package com.arenacun.kuodra.presentation.feature.settings
 
 import com.arenacun.kuodra.domain.model.CalcState
 import com.arenacun.kuodra.domain.model.SpaceSettings
+import com.arenacun.kuodra.domain.model.ThemeMode
 import com.arenacun.kuodra.domain.model.UseCase
 
 /** Campo monetario que está editando la calculadora dentro de ajustes. */
@@ -18,7 +19,7 @@ data class ContactDraft(
 data class SettingsUiState(
     val useCase: UseCase = UseCase.Personal,
     val settings: SpaceSettings? = null,
-    val darkTheme: Boolean = false,
+    val themeMode: ThemeMode = ThemeMode.System,
     val calcTarget: CalcTarget? = null,
     val calc: CalcState = CalcState(),
     val editingContact: ContactDraft? = null,

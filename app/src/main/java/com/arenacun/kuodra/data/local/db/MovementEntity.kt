@@ -26,6 +26,10 @@ data class MovementEntity(
     val splitNames: List<String>,
     /** Desglose en partidas serializado como JSON (`[]` = sin detalle). */
     val itemsJson: String = "[]",
+    /** Raw OCR del ticket si nació de un escaneo (material para templates futuros). */
+    val scanRawText: String? = null,
+    /** Nombre del enum `ScanSource` (`Camera`/`Gallery`); null = captura manual. */
+    val scanSource: String? = null,
     val updatedAt: Long,
     val deleted: Boolean,
     val dirty: Boolean,

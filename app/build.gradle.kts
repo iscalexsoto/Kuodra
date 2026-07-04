@@ -1,3 +1,4 @@
+import com.android.build.api.variant.impl.VariantOutputImpl
 import java.util.Properties
 
 plugins {
@@ -14,6 +15,9 @@ val pocketbaseUrl: String = Properties().apply {
     if (f.exists()) f.inputStream().use { load(it) }
 }.getProperty("pocketbase.url") ?: "http://10.0.2.2:8090"
 
+// Nombre de versión de la app; se reutiliza para nombrar el APK generado.
+val appVersionName = "1.0"
+
 android {
     namespace = "com.arenacun.kuodra"
     compileSdk {
@@ -25,7 +29,7 @@ android {
         minSdk = 33
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -48,6 +52,23 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+    testOptions {
+        // android.util.Log (SyncManager y otros) no lanza en tests unitarios de host:
+        // devuelve valores por defecto en vez de "Method ... not mocked".
+        unitTests.isReturnDefaultValues = true
+    }
+}
+
+// Renombra el APK generado según el tipo de build:
+//   release → Kuodra_v{version}.apk
+//   debug   → Kuodra_debug_v{version}.apk
+androidComponents {
+    onVariants { variant ->
+        val prefix = if (variant.buildType == "debug") "Kuodra_debug" else "Kuodra"
+        variant.outputs.forEach { output ->
+            (output as VariantOutputImpl).outputFileName.set("${prefix}_v$appVersionName.apk")
+        }
     }
 }
 
@@ -83,6 +104,14 @@ dependencies {
 
     // Sincronización en segundo plano (push/pull diferido y con restricción de red)
     implementation(libs.androidx.work.runtime.ktx)
+
+    // Escaneo de tickets: cámara in-app + OCR on-device (bundled ⇒ funciona offline)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.text.recognition)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     // Inyección de dependencias (Koin)
     implementation(platform(libs.koin.bom))

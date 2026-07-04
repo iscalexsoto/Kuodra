@@ -1,9 +1,10 @@
 package com.arenacun.kuodra.domain.repository
 
+import com.arenacun.kuodra.domain.model.ThemeMode
 import kotlinx.coroutines.flow.StateFlow
 
-/** Preferencias de usuario. Hoy solo el tema; futuro candidato a DataStore. */
+/** Preferencias de usuario persistidas en DataStore. Hoy solo el tema. */
 interface PreferencesRepository {
-    val darkTheme: StateFlow<Boolean>
-    fun toggleTheme()
+    val themeMode: StateFlow<ThemeMode>
+    fun setThemeMode(mode: ThemeMode)
 }

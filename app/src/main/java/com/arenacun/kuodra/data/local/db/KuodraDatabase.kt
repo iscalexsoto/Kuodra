@@ -16,10 +16,10 @@ import androidx.room.TypeConverters
         PeriodSnapshotEntity::class,
         TelemetryEventEntity::class,
     ],
-    // v6: nueva tabla `telemetry_events` (cola de observabilidad remota). El bump fuerza la
+    // v7: columnas de escaneo en `movements` (scanRawText/scanSource). El bump fuerza la
     // migración destructiva ya configurada; el sync repuebla los datos desde PocketBase tras limpiar
     // (la telemetría pendiente que se pierda es aceptable: es diagnóstico best-effort).
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)

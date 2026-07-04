@@ -114,6 +114,33 @@ class SyncManagerTest {
     }
 
     @Test
+    fun `pull does not rewrite a row already at the remote version`() = runTest {
+        // Push y pull en la misma corrida: el pull devuelve el registro recién subido con el
+        // mismo `updated` que dejó markSynced. No debe re-upsertarse — si el servidor ignorara
+        // un campo del DTO (p. ej. `items` sin columna), el re-upsert borraría el dato local.
+        val pushedUpdated = "2026-07-03 10:00:00.000Z"
+        val dao = FakeMovementDao(
+            mutableListOf(
+                entity("m5", dirty = true).copy(itemsJson = """[{"id":"i1","concept":"Leche","amount":3000}]"""),
+            ),
+        )
+        val api = FakeMovementApi(
+            createdUpdated = pushedUpdated,
+            // El "servidor" no persiste items: el DTO vuelve sin ellos y con otro título.
+            listResult = listOf(dto("m5", pushedUpdated).copy(title = "remote")),
+        )
+        val env = newEnv(api, dao)
+        env.session.signIn()
+
+        env.manager.sync()
+
+        val row = dao.rows.first { it.id == "m5" }
+        assertEquals("m5", row.title)
+        assertTrue(row.itemsJson.contains("Leche"))
+        assertEquals(pushedUpdated, env.cursors.get("movements"))
+    }
+
+    @Test
     fun `no session is a no-op success`() = runTest {
         val dao = FakeMovementDao(mutableListOf(entity("m1", dirty = true)))
         val api = FakeMovementApi()
@@ -179,6 +206,7 @@ class SyncManagerTest {
     }
     private class EmptyBudgetDao : BudgetDao {
         override fun observe(owner: String): Flow<BudgetEntity?> = flowOf(null)
+        override suspend fun find(owner: String): BudgetEntity? = null
         override suspend fun dirtyRows(owner: String): List<BudgetEntity> = emptyList()
         override suspend fun markSynced(owner: String, remoteUpdated: String) = Unit
         override suspend fun upsert(budget: BudgetEntity) = Unit

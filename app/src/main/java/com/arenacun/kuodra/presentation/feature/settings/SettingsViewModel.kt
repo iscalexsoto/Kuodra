@@ -9,6 +9,7 @@ import com.arenacun.kuodra.domain.model.CalcKey
 import com.arenacun.kuodra.domain.model.CalcState
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.SpaceSettings
+import com.arenacun.kuodra.domain.model.ThemeMode
 import com.arenacun.kuodra.domain.repository.AuthRepository
 import com.arenacun.kuodra.domain.repository.PreferencesRepository
 import com.arenacun.kuodra.domain.repository.SettingsRepository
@@ -63,12 +64,12 @@ class SettingsViewModel(
 
     val uiState = combine(
         settingsRepository.settings(useCase),
-        preferences.darkTheme,
+        preferences.themeMode,
         authRepository.session,
         local,
-    ) { settings, dark, session, l ->
+    ) { settings, themeMode, session, l ->
         val merged = if (l.budgetEdit != null) settings.copy(budget = l.budgetEdit) else settings
-        SettingsUiState(useCase, merged, dark, l.calcTarget, l.calc, l.editingContact, session?.name.orEmpty(), l.editingName)
+        SettingsUiState(useCase, merged, themeMode, l.calcTarget, l.calc, l.editingContact, session?.name.orEmpty(), l.editingName)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState(useCase))
 
     private fun current(): SpaceSettings = settingsRepository.settings(useCase).value
@@ -76,7 +77,7 @@ class SettingsViewModel(
 
     fun onNameChange(name: String) = save(current().copy(name = name))
     fun onToggleReminder() = save(current().copy(reminderEnabled = !current().reminderEnabled))
-    fun onToggleTheme() = preferences.toggleTheme()
+    fun onSetThemeMode(mode: ThemeMode) = preferences.setThemeMode(mode)
 
     // ---- Presupuesto (Personal) ----
     fun onToggleBudget() = editBudget { it.copy(enabled = !it.enabled) }

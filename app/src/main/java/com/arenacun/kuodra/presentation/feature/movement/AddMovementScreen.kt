@@ -48,12 +48,14 @@ import com.arenacun.kuodra.presentation.component.KuodraCalendar
 import com.arenacun.kuodra.presentation.component.KuodraNumberPad
 import com.arenacun.kuodra.presentation.component.KuodraSearchField
 import com.arenacun.kuodra.presentation.component.ToneAvatar
+import com.arenacun.kuodra.presentation.feature.scan.ScanDraftViewModel
 import com.arenacun.kuodra.presentation.theme.Kuodra
 import com.arenacun.kuodra.presentation.theme.KuodraColors
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun AddMovementScreen(
+    draftViewModel: ScanDraftViewModel,
     onBack: () -> Unit,
     onSaved: () -> Unit,
     viewModel: AddMovementViewModel = koinViewModel(),
@@ -63,6 +65,13 @@ fun AddMovementScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val uc = space.useCase
     val t = space.terminology
+
+    // Si venimos de un escaneo, el draft pre-puebla el formulario (una sola vez; en el flujo
+    // manual `consume()` devuelve null y no pasa nada). En edición el draft se ignora: un
+    // escaneo nunca pisa un movimiento existente.
+    LaunchedEffect(Unit) {
+        if (!viewModel.isEditMode) draftViewModel.consume()?.let(viewModel::applyScan)
+    }
 
     LaunchedEffect(Unit) { viewModel.saved.collect { onSaved() } }
 
@@ -83,7 +92,10 @@ fun AddMovementScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             BackCircle(onClick = onBack)
-            Text(t.addTitle, style = Kuodra.type.heading, color = c.ink)
+            Text(
+                if (state.isEditing) "Editar ${t.saveNoun}" else t.addTitle,
+                style = Kuodra.type.heading, color = c.ink,
+            )
         }
 
         // FECHA
@@ -233,7 +245,12 @@ fun AddMovementScreen(
             Modifier.fillMaxWidth().padding(top = 22.dp).clip(Kuodra.shape.lg).background(c.primary)
                 .clickable { viewModel.onSave() }.padding(vertical = 17.dp),
             contentAlignment = Alignment.Center,
-        ) { Text("Guardar ${t.saveNoun}", style = Kuodra.type.heading, color = c.primaryInk) }
+        ) {
+            Text(
+                if (state.isEditing) "Guardar cambios" else "Guardar ${t.saveNoun}",
+                style = Kuodra.type.heading, color = c.primaryInk,
+            )
+        }
     }
 
     // ===== Overlays =====

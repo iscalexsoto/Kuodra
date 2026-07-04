@@ -11,6 +11,9 @@ interface BudgetDao {
     @Query("SELECT * FROM budget WHERE owner = :owner")
     fun observe(owner: String): Flow<BudgetEntity?>
 
+    @Query("SELECT * FROM budget WHERE owner = :owner LIMIT 1")
+    suspend fun find(owner: String): BudgetEntity?
+
     @Query("SELECT * FROM budget WHERE owner = :owner AND dirty = 1")
     suspend fun dirtyRows(owner: String): List<BudgetEntity>
 

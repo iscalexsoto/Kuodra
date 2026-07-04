@@ -46,6 +46,9 @@ last-write-wins. En todas, `id`/`created`/`updated` son de sistema (el cliente e
 | `date`       | text     | Fecha ISO `yyyy-MM-dd` (texto, no el tipo date de PB).          |
 | `payer`      | text     | Opcional (Gastos/Caja).                                         |
 | `splitNames` | json     | Lista de nombres (Gastos).                                      |
+| `items`      | json     | Partidas del desglose: `[{id, concept, amount(centavos), payer, inFund}]`; `[]` = sin detalle. **Obligatorio crearlo**: sin esta columna PocketBase ignora el campo del DTO y el pull del sync borra las partidas locales. |
+| `scanRawText`| text     | Opcional. Raw OCR del ticket si el movimiento nació de un escaneo (puede ser largo; material para los templates futuros). |
+| `scanSource` | text     | Opcional. `Camera`/`Gallery` (nombre del enum `ScanSource`); vacío = captura manual. |
 | `deleted`    | bool     | Tombstone: borrado lógico para propagar la baja.               |
 
 ### `categories` (tipo: Base)
@@ -140,6 +143,92 @@ Notas:
 
 ---
 
+## Proxy de análisis de tickets (ruta custom + Mistral)
+
+El escaneo de tickets manda el texto OCR a **Mistral** a través de una **ruta custom** de
+PocketBase: la API key vive **solo en el servidor** (env var), nunca en el APK. Si esta ruta no
+existe o falla, la app cae automáticamente al parser regex local — la feature degrada, no rompe.
+
+### Contrato HTTP (lo que espera el cliente, `KtorTicketAnalysisApi`)
+
+```
+POST {POCKETBASE_URL}/api/kuodra/analyze-ticket
+Authorization: <token de usuario PocketBase, crudo>
+Content-Type: application/json
+
+Body:    { "text": "<raw OCR normalizado>" }
+200 OK:  { "version": 1, "merchant": "OXXO"|null, "total": 187.50|null,
+           "date": "2026-07-01"|null, "items": [{"concept": "Coca 600ml", "amount": 19.0}] }
+400: body sin "text" · 401: sin auth · 502: Mistral no disponible (el cliente cae a regex)
+```
+
+`version` + campos opcionales = extensible: una v2 podrá añadir `template` (paso de templates)
+sin romper clientes v1 (`ignoreUnknownKeys`).
+
+### Configuración
+
+1. **Env var** en el entorno del proceso PocketBase: `MISTRAL_API_KEY=<key de api.mistral.ai>`.
+2. **Hook JS**: crear `pb_hooks/analyze_ticket.pb.js` junto al binario con el contenido de abajo
+   y reiniciar PocketBase.
+
+```js
+/// <reference path="../pb_data/types.d.ts" />
+
+const SYSTEM_PROMPT = `Eres un extractor de datos de tickets de compra (principalmente de México, en español).
+Recibirás el texto OCR crudo de un ticket, posiblemente con errores de reconocimiento.
+Responde ÚNICAMENTE un objeto JSON con exactamente estas claves:
+  "merchant": string|null  — nombre corto del comercio (ej. "OXXO", "Walmart"), sin razón social ni RFC.
+  "total": number|null     — importe TOTAL pagado, en unidades de la moneda (ej. 187.50). No uses el subtotal.
+  "date": string|null      — fecha del ticket en formato yyyy-MM-dd; null si no es legible o es ambigua.
+  "items": array           — partidas compradas: [{"concept": string, "amount": number}].
+Reglas: no incluyas como items subtotal, IVA, propina, cambio, efectivo, tarjeta ni descuentos;
+corrige errores obvios de OCR en los conceptos; si un dato no es confiable usa null o [];
+nunca inventes valores; no agregues texto fuera del JSON.`
+
+routerAdd("POST", "/api/kuodra/analyze-ticket", (e) => {
+    const body = e.requestInfo().body
+    if (!body || typeof body.text !== "string" || body.text.trim() === "") {
+        return e.json(400, { error: "text requerido" })
+    }
+    const key = $os.getenv("MISTRAL_API_KEY")
+    if (!key) return e.json(502, { error: "proxy no configurado" })
+    try {
+        const res = $http.send({
+            url: "https://api.mistral.ai/v1/chat/completions",
+            method: "POST",
+            headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json" },
+            timeout: 12, // segundos; menor que los 15s de timeout del cliente
+            body: JSON.stringify({
+                model: "mistral-small-latest",
+                temperature: 0,
+                response_format: { type: "json_object" },
+                messages: [
+                    { role: "system", content: SYSTEM_PROMPT },
+                    { role: "user", content: body.text.slice(0, 8000) },
+                ],
+            }),
+        })
+        const parsed = JSON.parse(res.json.choices[0].message.content)
+        return e.json(200, {
+            version: 1,
+            merchant: typeof parsed.merchant === "string" ? parsed.merchant : null,
+            total: typeof parsed.total === "number" ? parsed.total : null,
+            date: typeof parsed.date === "string" ? parsed.date : null,
+            items: Array.isArray(parsed.items) ? parsed.items : [],
+        })
+    } catch (err) {
+        return e.json(502, { error: "análisis no disponible" })
+    }
+}, $apis.requireAuth())
+```
+
+Notas:
+- `$apis.requireAuth()` exige un token de usuario válido en `Authorization` (401 si falta).
+- `mistral-small-latest` basta para extracción estructurada (barato y rápido, ~1-2 s por ticket).
+- El texto se trunca a 8000 chars por control de costo (un ticket normal es mucho menor).
+
+---
+
 ## Verificación end-to-end
 
 Datos (sync):
@@ -153,12 +242,19 @@ Telemetría:
 5. Genera un `log(Warning)`, una excepción capturada y un crash → aparecen en `telemetry_events` con
    breadcrumbs y contexto (el crash, tras reabrir la app).
 
+Escaneo de tickets:
+6. Con el hook y `MISTRAL_API_KEY` configurados: escanear un ticket → el formulario se puebla con
+   comercio/total/fecha/partidas de Mistral; el movimiento guardado trae `scanRawText` y `scanSource`.
+7. Sin la key (o en modo avión): el escaneo sigue funcionando con el parser regex local.
+
 ---
 
 ## Historial de cambios
 
 | Fecha      | Cambio                                                                 |
 |------------|------------------------------------------------------------------------|
+| 2026-07-03 | Campo `items` (json) en `movements`. Faltaba desde que existen las partidas: PocketBase ignoraba el campo del DTO y el pull del sync **borraba las partidas locales** tras cada guardado. |
+| 2026-07-02 | Campos `scanRawText` y `scanSource` en `movements` + ruta custom `/api/kuodra/analyze-ticket` (hook JS + `MISTRAL_API_KEY`) para el escaneo de tickets. |
 | 2026-07-01 | Alta de `telemetry_events` (observabilidad remota).                    |
 | Fase 2     | Colecciones de datos `movements`, `categories`, `budgets`, `period_snapshots`. |
 | Base       | `users` (auth + OTP + SMTP) — configuración base del backend.          |

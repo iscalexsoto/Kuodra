@@ -1,5 +1,6 @@
 package com.arenacun.kuodra.presentation.feature.settings
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -40,6 +41,7 @@ import com.arenacun.kuodra.domain.model.BudgetFrequency
 import com.arenacun.kuodra.domain.model.DateLabels
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.SpaceSettings
+import com.arenacun.kuodra.domain.model.ThemeMode
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.component.Chevron
@@ -47,6 +49,7 @@ import com.arenacun.kuodra.presentation.component.KIcon
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
 import com.arenacun.kuodra.presentation.component.KuodraCalculator
 import com.arenacun.kuodra.presentation.component.KuodraTextField
+import com.arenacun.kuodra.presentation.component.KuodraThemeSwitch
 import com.arenacun.kuodra.presentation.component.PlusIcon
 import com.arenacun.kuodra.presentation.component.ToneAvatar
 import com.arenacun.kuodra.presentation.theme.Kuodra
@@ -56,7 +59,6 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onOpenHistory: () -> Unit,
     onOpenCategories: () -> Unit,
     onSignedOut: () -> Unit,
     viewModel: SettingsViewModel = koinViewModel(),
@@ -81,15 +83,6 @@ fun SettingsScreen(
         ) {
             BackCircle(onClick = onBack)
             Text(titleLabel(state.useCase), style = Kuodra.type.heading, color = c.ink)
-        }
-
-        // Subtítulo (solo Personal, como el prototipo)
-        if (state.useCase == UseCase.Personal) {
-            Text(
-                "Todo es opcional. Sin presupuesto configurado, el dashboard muestra el total del mes en curso.",
-                style = Kuodra.type.caption, color = c.ink3,
-                modifier = Modifier.padding(start = 48.dp, end = 4.dp, bottom = 8.dp),
-            )
         }
 
         // Nombre (Gastos / Caja; en Personal el nombre es implícito)
@@ -130,28 +123,27 @@ fun SettingsScreen(
         // Categorías: pantalla dedicada con buscador (todos los casos de uso)
         SectionLabel(c, "CATEGORÍAS")
         Card(c) {
-            NavRow(c, "Categorías", "Crea, edita y busca tus categorías", onOpenCategories)
+            NavRow(c, R.drawable.ic_categories, "Categorías", "Crea, edita y busca tus categorías", onOpenCategories)
         }
 
-        // Historial de cortes / periodos
-        SectionLabel(c, "HISTORIAL")
-        Card(c) {
-            if (state.useCase == UseCase.Personal) {
-                NavRow(c, "Periodos cerrados", "Revisa tus periodos cerrados", onOpenHistory)
-            } else {
-                NavRow(c, "Cortes anteriores", "Consulta los cortes anteriores", onOpenHistory)
-            }
-        }
-
-        // Apariencia (control de tema del prototipo)
+        // Apariencia (tema del sistema / claro / oscuro)
         SectionLabel(c, "APARIENCIA")
         Card(c) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Text("Tema oscuro", style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
-                KToggle(c, state.darkTheme, viewModel::onToggleTheme)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    SettingIcon(c, R.drawable.ic_sun_moon)
+                    Column(Modifier.weight(1f)) {
+                        Text("Tema", style = Kuodra.type.heading, color = c.ink)
+                        Text(themeSubtitle(state.themeMode), style = Kuodra.type.caption, color = c.ink3)
+                    }
+                }
+                KuodraThemeSwitch(selected = state.themeMode, onSelect = viewModel::onSetThemeMode)
             }
         }
 
@@ -242,44 +234,56 @@ private fun NameSheet(c: KuodraColors, draft: String, viewModel: SettingsViewMod
 
 /** Fila que navega a otra pantalla: etiqueta + descripción + chevron a la derecha. */
 @Composable
-private fun NavRow(c: KuodraColors, label: String, sub: String, onClick: () -> Unit) {
+private fun NavRow(c: KuodraColors, @DrawableRes icon: Int, label: String, sub: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        SettingIcon(c, icon)
         Column(Modifier.weight(1f)) {
-            Text(label, style = Kuodra.type.body, color = c.ink)
+            Text(label, style = Kuodra.type.heading, color = c.ink)
             if (sub.isNotEmpty()) {
                 Text(sub, style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(top = 2.dp))
             }
         }
-        Box(Modifier.width(8.dp))
         Chevron(7.dp, c.ink3, degrees = 0f)
     }
 }
 
+/** Contenedor de ícono de ajuste: caja 42dp tint + glifo `ic_*` en tintInk (patrón de MenuOptionRow). */
+@Composable
+private fun SettingIcon(c: KuodraColors, @DrawableRes iconRes: Int) {
+    Box(
+        Modifier.size(42.dp).clip(Kuodra.shape.md).background(c.tint),
+        contentAlignment = Alignment.Center,
+    ) { KIcon(iconRes, 20.dp, c.tintInk) }
+}
+
 @Composable
 private fun BudgetSection(c: KuodraColors, budget: BudgetConfig, viewModel: SettingsViewModel) {
-    // Encabezado con toggle (fuera de la card, como el prototipo)
-    Row(
-        Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(13.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text("Presupuesto", style = Kuodra.type.heading, color = c.ink)
-            Text(
-                "Actívalo para definir frecuencia, días de pago y monto límite. El dashboard mostrará tu avance y ritmo de gasto.",
-                style = Kuodra.type.caption, color = c.ink3,
-                modifier = Modifier.padding(top = 3.dp),
-            )
-        }
-        KToggle(c, budget.enabled, viewModel::onToggleBudget)
-    }
+    // Encabezado + contenido en una sola card (como el diseño). El toggle vive en el encabezado.
+    Card(c, Modifier.padding(top = 8.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                SettingIcon(c, R.drawable.ic_credit_card)
+                Column(Modifier.weight(1f)) {
+                    Text("Presupuesto", style = Kuodra.type.heading, color = c.ink)
+                    Text(
+                        "Actívalo para definir frecuencia, días de pago y monto límite. El dashboard mostrará tu avance y ritmo de gasto.",
+                        style = Kuodra.type.caption, color = c.ink3,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
+                KToggle(c, budget.enabled, viewModel::onToggleBudget)
+            }
 
-    if (budget.enabled) {
-        Card(c) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            if (budget.enabled) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 16.dp).height(1.dp).background(c.line))
                 Text("FRECUENCIA", style = Kuodra.type.overline, color = c.ink3,
                     modifier = Modifier.padding(bottom = 11.dp))
                 FreqGrid(c, budget.frequency, viewModel::onSetFrequency)
@@ -294,18 +298,15 @@ private fun BudgetSection(c: KuodraColors, budget: BudgetConfig, viewModel: Sett
                 AmountLimit(c, budget.amount) { viewModel.onOpenCalc(CalcTarget.Budget) }
             }
         }
-        // Nota: cierre manual desde el dashboard
-        Row(
-            Modifier.fillMaxWidth().padding(top = 12.dp, start = 4.dp, end = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(15.dp).clip(Kuodra.shape.pill).background(c.tint), contentAlignment = Alignment.Center) {
-                Box(Modifier.size(6.dp).clip(Kuodra.shape.pill).background(c.tintInk))
-            }
-            Text("El cierre manual del periodo está disponible desde el menú ··· del dashboard.",
-                style = Kuodra.type.caption, color = c.ink3)
-        }
+    }
+
+    if (budget.enabled) {
+        // Nota: cierre manual desde el dashboard (fuera de la card, como el diseño).
+        WarnNote(
+            c,
+            "El cierre manual del periodo está disponible desde el menú ··· del dashboard.",
+            Modifier.padding(top = 12.dp),
+        )
     }
 }
 
@@ -455,8 +456,19 @@ private fun AmountLimit(c: KuodraColors, amount: String, onClick: () -> Unit) {
 /** Aviso de meses cortos (febrero) del modo Quincenal. */
 @Composable
 private fun FebruaryWarning(c: KuodraColors) {
+    WarnNote(
+        c,
+        "En meses cortos (como febrero) puede que el segundo día no exista. Si pasa, cierra el periodo manualmente desde el dashboard.",
+        Modifier.padding(top = 13.dp),
+    )
+}
+
+/** Nota de advertencia (acento `warn`): tarjeta tintada + badge "!" + texto. Reutilizable. */
+@Composable
+private fun WarnNote(c: KuodraColors, text: String, modifier: Modifier = Modifier) {
     Row(
-        Modifier.fillMaxWidth().padding(top = 13.dp).clip(Kuodra.shape.md).background(c.warnTint)
+        modifier.fillMaxWidth().clip(Kuodra.shape.md).background(c.warnTint)
+            .border(1.dp, c.warn.copy(alpha = 0.35f), Kuodra.shape.md)
             .padding(horizontal = 13.dp, vertical = 11.dp),
         horizontalArrangement = Arrangement.spacedBy(9.dp),
         verticalAlignment = Alignment.Top,
@@ -464,11 +476,15 @@ private fun FebruaryWarning(c: KuodraColors) {
         Box(Modifier.size(18.dp).clip(Kuodra.shape.pill).background(c.warn), contentAlignment = Alignment.Center) {
             Text("!", style = Kuodra.type.overline.copy(letterSpacing = 0.sp), color = Color.White)
         }
-        Text(
-            "En meses cortos (como febrero) puede que el segundo día no exista. Si pasa, cierra el periodo manualmente desde el dashboard.",
-            style = Kuodra.type.caption, color = c.ink2,
-        )
+        Text(text, style = Kuodra.type.caption, color = c.ink2)
     }
+}
+
+/** Subtítulo del bloque de tema, según el modo activo. */
+private fun themeSubtitle(mode: ThemeMode): String = when (mode) {
+    ThemeMode.System -> "Sigue el tema del sistema"
+    ThemeMode.Light -> "Siempre claro"
+    ThemeMode.Dark -> "Siempre oscuro"
 }
 
 @Composable
@@ -635,8 +651,8 @@ private fun SectionLabel(c: KuodraColors, text: String) {
 }
 
 @Composable
-private fun Card(c: KuodraColors, content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface).border(1.dp, c.line, Kuodra.shape.xl)) {
+private fun Card(c: KuodraColors, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Box(modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface).border(1.dp, c.line, Kuodra.shape.xl)) {
         content()
     }
 }
@@ -680,7 +696,7 @@ private fun nameLabel(useCase: UseCase): String = when (useCase) {
 }
 
 private fun titleLabel(useCase: UseCase): String = when (useCase) {
-    UseCase.Personal -> "Configuración"
+    UseCase.Personal -> "Ajustes"
     UseCase.Gastos -> "Ajustes del grupo"
     UseCase.Caja -> "Ajustes del fondo"
 }

@@ -6,6 +6,7 @@ import com.arenacun.kuodra.data.remote.dto.MovementItemDto
 import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.MovementItem
+import com.arenacun.kuodra.domain.scan.ScanSource
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -34,6 +35,8 @@ fun MovementEntity.toDomain(): Movement = Movement(
     payer = payer,
     splitNames = splitNames,
     items = itemsJson.toItems(),
+    scanRawText = scanRawText,
+    scanSource = scanSource?.let { name -> ScanSource.entries.firstOrNull { it.name == name } },
 )
 
 /** Dominio → Entity, sellando `owner` y los metadatos de sincronización. */
@@ -53,6 +56,8 @@ fun Movement.toEntity(
     payer = payer,
     splitNames = splitNames,
     itemsJson = items.toJson(),
+    scanRawText = scanRawText,
+    scanSource = scanSource?.name,
     updatedAt = updatedAt,
     deleted = deleted,
     dirty = dirty,
@@ -70,6 +75,8 @@ fun MovementEntity.toDto(): MovementDto = MovementDto(
     payer = payer,
     splitNames = splitNames,
     items = json.decodeFromString(itemsJson.ifBlank { "[]" }),
+    scanRawText = scanRawText.orEmpty(),
+    scanSource = scanSource.orEmpty(),
     deleted = deleted,
     updated = remoteUpdated,
 )
@@ -86,6 +93,8 @@ fun MovementDto.toEntity(owner: String): MovementEntity = MovementEntity(
     payer = payer,
     splitNames = splitNames,
     itemsJson = json.encodeToString(items),
+    scanRawText = scanRawText.ifEmpty { null },
+    scanSource = scanSource.ifEmpty { null },
     updatedAt = System.currentTimeMillis(),
     deleted = deleted,
     dirty = false,

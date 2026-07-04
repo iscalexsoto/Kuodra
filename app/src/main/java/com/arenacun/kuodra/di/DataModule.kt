@@ -15,6 +15,8 @@ import com.arenacun.kuodra.data.repository.SettingsRepositoryImpl
 import com.arenacun.kuodra.data.repository.SnapshotRepositoryImpl
 import com.arenacun.kuodra.data.repository.SpaceRepositoryImpl
 import com.arenacun.kuodra.data.repository.SummaryRepositoryImpl
+import com.arenacun.kuodra.data.scan.MistralTicketParser
+import com.arenacun.kuodra.data.scan.MlKitOcrEngine
 import com.arenacun.kuodra.data.sync.SyncCursorStore
 import com.arenacun.kuodra.data.sync.SyncManager
 import com.arenacun.kuodra.data.sync.SyncTrigger
@@ -27,6 +29,9 @@ import com.arenacun.kuodra.domain.repository.SettingsRepository
 import com.arenacun.kuodra.domain.repository.SnapshotRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
+import com.arenacun.kuodra.domain.scan.OcrEngine
+import com.arenacun.kuodra.domain.scan.RegexTicketParser
+import com.arenacun.kuodra.domain.usecase.ScanTicketUseCase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -65,6 +70,19 @@ val dataModule = module {
     single { SyncCursorStore(get()) }
     single { WorkManagerSyncTrigger(androidContext()) } bind SyncTrigger::class
     single { SyncManager(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+
+    // Escaneo de tickets: OCR (MLKit) + cadena de parsers en orden de prioridad
+    // (Mistral remoto → regex local). Futuro: insertar el TemplateTicketParser al frente.
+    single { MlKitOcrEngine(androidContext()) } bind OcrEngine::class
+    single { MistralTicketParser(get(), get(), get()) }
+    single { RegexTicketParser() }
+    single {
+        ScanTicketUseCase(
+            get(),
+            listOf(get<MistralTicketParser>(), get<RegexTicketParser>()),
+            get(),
+        )
+    }
 
     single { AuthRepositoryImpl(get(), get(), get(), get()) } bind AuthRepository::class
     single { SpaceRepositoryImpl(get()) } bind SpaceRepository::class

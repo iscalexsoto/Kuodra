@@ -3,6 +3,7 @@ package com.arenacun.kuodra.presentation.app
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.arenacun.kuodra.domain.model.Session
+import com.arenacun.kuodra.domain.model.ThemeMode
 import com.arenacun.kuodra.domain.repository.AuthRepository
 import com.arenacun.kuodra.domain.repository.PreferencesRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
@@ -24,7 +25,7 @@ class AppViewModel(
     private val telemetry: Telemetry,
 ) : ViewModel() {
 
-    val darkTheme: StateFlow<Boolean> = preferences.darkTheme
+    val themeMode: StateFlow<ThemeMode> = preferences.themeMode
 
     private val _start = MutableStateFlow(StartState.Loading)
     val start: StateFlow<StartState> = _start.asStateFlow()

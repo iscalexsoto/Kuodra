@@ -71,6 +71,7 @@ class DashboardViewModel(
     fun onOpenSpaces() = menu.update { it.copy(sheet = DashboardSheet.Spaces) }
     fun onOpenCreateSpace() = menu.update { it.copy(sheet = DashboardSheet.CreateSpace) }
     fun onOpenMenu() = menu.update { it.copy(sheet = DashboardSheet.Menu) }
+    fun onOpenAddOptions() = menu.update { it.copy(sheet = DashboardSheet.AddOptions) }
     fun onCloseSheet() = menu.update { it.copy(sheet = DashboardSheet.None) }
 
     // ---- Compartir resumen/corte (Gastos/Caja) ----

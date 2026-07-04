@@ -28,6 +28,10 @@ data class MovementDto(
     val payer: String? = null,
     val splitNames: List<String> = emptyList(),
     val items: List<MovementItemDto> = emptyList(),
+    /** Raw OCR del ticket (vacío ⇔ sin escaneo; PocketBase devuelve "" en text vacíos). */
+    val scanRawText: String = "",
+    /** Nombre del enum `ScanSource` (`Camera`/`Gallery`) o vacío. */
+    val scanSource: String = "",
     val deleted: Boolean = false,
     val updated: String = "",
 )

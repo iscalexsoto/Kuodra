@@ -40,6 +40,7 @@ fun MovementDetailScreen(
     movementId: String,
     onBack: () -> Unit,
     onDeleted: () -> Unit,
+    onEdit: (String) -> Unit,
     viewModel: MovementDetailViewModel = koinViewModel { parametersOf(movementId) },
 ) {
     val c = Kuodra.colors
@@ -192,7 +193,7 @@ fun MovementDetailScreen(
                 Box(
                     Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.surface)
                         .border(1.5.dp, c.line, Kuodra.shape.lg)
-                        .clickable { /* editar — fuera de alcance de la maqueta */ }
+                        .clickable { onEdit(movementId) }
                         .padding(vertical = 15.dp),
                     contentAlignment = Alignment.Center,
                 ) { Text("Editar", style = Kuodra.type.heading, color = c.ink) }

@@ -12,6 +12,7 @@ import com.arenacun.kuodra.domain.model.MovementItem
 import com.arenacun.kuodra.domain.model.Space
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.newId
+import com.arenacun.kuodra.domain.scan.TicketScan
 import com.arenacun.kuodra.domain.repository.CategoryRepository
 import com.arenacun.kuodra.domain.repository.MovementRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
@@ -27,17 +28,23 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 /**
- * Alta de movimiento. Recoge el formulario (monto vía calculadora, fecha vía calendario,
- * categoría/pagador/dividir vía sheets) y al guardar inserta en [MovementRepository] y emite
- * el evento [saved] para que la pantalla vuelva al dashboard. El catálogo de categorías es
- * reactivo ([CategoryRepository]) y se pueden crear categorías nuevas inline.
+ * Alta y edición de movimiento. Recoge el formulario (monto vía calculadora, fecha vía calendario,
+ * categoría/pagador/dividir vía sheets) y al guardar inserta o actualiza en [MovementRepository] y
+ * emite el evento [saved] para que la pantalla vuelva atrás. El catálogo de categorías es
+ * reactivo ([CategoryRepository]) y se pueden crear categorías nuevas inline. Con [editId] el
+ * formulario se pre-puebla desde el movimiento existente y guardar conserva su id; si el
+ * movimiento no existe, degrada a alta nueva.
  */
 class AddMovementViewModel(
+    private val editId: String?,
     spaceRepository: SpaceRepository,
     summaryRepository: SummaryRepository,
     private val categoryRepository: CategoryRepository,
     private val movementRepository: MovementRepository,
 ) : ViewModel() {
+
+    /** true si se navegó con intención de editar (aunque la pre-carga aún no termine). */
+    val isEditMode: Boolean = editId != null
 
     val space: StateFlow<Space> = spaceRepository.activeSpace
     private val useCase: UseCase = space.value.useCase
@@ -62,15 +69,62 @@ class AddMovementViewModel(
     val saved = _saved.receiveAsFlow()
 
     init {
-        // Catálogo reactivo: refleja categorías creadas (aquí o en Ajustes).
+        // Catálogo reactivo: refleja categorías creadas (aquí o en Ajustes). Al llegar el
+        // catálogo, re-resuelve la selección actual por id (cierra la carrera con la pre-carga
+        // de edición, que puede correr antes de que el catálogo esté poblado).
         viewModelScope.launch {
             categoryRepository.categories.collect { cats ->
-                _uiState.update { it.copy(categories = cats) }
+                _uiState.update { st ->
+                    st.copy(
+                        categories = cats,
+                        category = cats.find { it.id == st.category.id } ?: st.category,
+                    )
+                }
+            }
+        }
+        if (editId != null) viewModelScope.launch {
+            movementRepository.movement(useCase, editId)?.let { m ->
+                _uiState.update { st ->
+                    st.copy(
+                        concept = m.title,
+                        amount = m.amount.major.takeIf { it != 0.0 },
+                        date = m.date,
+                        // Preserva el categoryId original aunque la categoría ya no exista en el
+                        // catálogo (o este aún no cargue): solo cambia si el usuario elige otra.
+                        category = st.categories.find { it.id == m.categoryId }
+                            ?: Category.byId(m.categoryId).takeIf { it.id == m.categoryId }
+                            ?: Category.Uncategorized.copy(id = m.categoryId),
+                        payer = m.payer ?: st.payer,
+                        splitNames = if (useCase == UseCase.Gastos) m.splitNames else st.splitNames,
+                        items = m.items,
+                        note = m.note,
+                        scanRawText = m.scanRawText,
+                        scanSource = m.scanSource,
+                        isEditing = true,
+                    )
+                }
             }
         }
     }
 
     fun onConceptChange(value: String) = _uiState.update { it.copy(concept = value) }
+
+    /**
+     * Pre-población desde un escaneo de ticket. Solo pisa lo que el parseo detectó; la fecha se
+     * acota a `today` (el calendario no permite futuro). El raw OCR y el origen viajan en el
+     * estado hasta [onSave] para persistirse con el movimiento.
+     */
+    fun applyScan(scan: TicketScan) = _uiState.update { st ->
+        val p = scan.parsed
+        st.copy(
+            concept = p.merchant ?: st.concept,
+            amount = p.total?.major ?: st.amount,
+            date = p.date?.coerceAtMost(st.today) ?: st.date,
+            items = p.items.map { MovementItem(newId(), it.concept, it.amount) },
+            scanRawText = scan.rawText,
+            scanSource = scan.scanSource,
+        )
+    }
 
     // ---- Fecha ----
     fun onPickToday() = _uiState.update { it.copy(date = it.today) }
@@ -154,9 +208,11 @@ class AddMovementViewModel(
     }
 
     fun onSave() {
-        val movement = buildMovement(_uiState.value)
+        val st = _uiState.value
+        val movement = buildMovement(st)
         viewModelScope.launch {
-            movementRepository.add(useCase, movement)
+            if (st.isEditing) movementRepository.update(useCase, movement)
+            else movementRepository.add(useCase, movement)
             _saved.send(Unit)
         }
     }
@@ -167,15 +223,17 @@ class AddMovementViewModel(
         val split = if (useCase == UseCase.Gastos) st.splitNames else emptyList()
         val items = st.items.filter { it.amount.cents != 0L || it.concept.isNotBlank() }
         return Movement(
-            id = newId(),
+            id = if (st.isEditing) editId!! else newId(),
             amount = amount,
             categoryId = st.category.id,
             title = st.concept.ifBlank { st.category.name },
-            note = "",
+            note = st.note,
             date = st.date,
             payer = payer,
             splitNames = split,
             items = items,
+            scanRawText = st.scanRawText,
+            scanSource = st.scanSource,
         )
     }
 }

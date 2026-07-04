@@ -6,6 +6,7 @@ import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.MovementItem
 import com.arenacun.kuodra.domain.model.adjustmentOf
+import com.arenacun.kuodra.domain.scan.ScanSource
 import com.arenacun.kuodra.presentation.component.CategoryDraft
 import java.time.LocalDate
 
@@ -44,6 +45,14 @@ data class AddMovementUiState(
     val showCalculator: Boolean = false,
     val showCalendar: Boolean = false,
     val showNumberPad: Boolean = false,
+    /** Raw OCR del escaneo que pre-pobló el formulario (no se pinta; viaja al guardar). */
+    val scanRawText: String? = null,
+    /** Origen del escaneo; null = captura manual. */
+    val scanSource: ScanSource? = null,
+    /** Nota original del movimiento en edición (sin UI; se preserva al guardar). */
+    val note: String = "",
+    /** true si el formulario pre-cargó un movimiento existente (guardar = actualizar). */
+    val isEditing: Boolean = false,
 ) {
     val amountLabel: String get() = amount?.let { Calc.formatAmount(it) } ?: "$0"
     val hasAmount: Boolean get() = amount != null

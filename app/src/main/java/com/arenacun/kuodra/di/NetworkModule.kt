@@ -10,7 +10,9 @@ import com.arenacun.kuodra.data.remote.KtorMovementApi
 import com.arenacun.kuodra.data.remote.KtorPeriodSnapshotApi
 import com.arenacun.kuodra.data.remote.MovementApi
 import com.arenacun.kuodra.data.remote.PeriodSnapshotApi
+import com.arenacun.kuodra.data.remote.KtorTicketAnalysisApi
 import com.arenacun.kuodra.data.remote.PocketBaseClient
+import com.arenacun.kuodra.data.remote.TicketAnalysisApi
 import org.koin.dsl.bind
 import org.koin.dsl.module
 
@@ -22,4 +24,5 @@ val networkModule = module {
     single { KtorCategoryApi(get()) } bind CategoryApi::class
     single { KtorBudgetApi(get()) } bind BudgetApi::class
     single { KtorPeriodSnapshotApi(get()) } bind PeriodSnapshotApi::class
+    single { KtorTicketAnalysisApi(get()) } bind TicketAnalysisApi::class
 }

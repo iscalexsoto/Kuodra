@@ -1,6 +1,7 @@
 package com.arenacun.kuodra.presentation
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -10,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arenacun.kuodra.domain.model.ThemeMode
 import com.arenacun.kuodra.presentation.app.AppViewModel
 import com.arenacun.kuodra.presentation.app.StartState
 import com.arenacun.kuodra.presentation.app.toDestination
@@ -22,8 +24,13 @@ import org.koin.androidx.compose.koinViewModel
 /** Punto de entrada Compose: aplica el tema observado y monta el grafo de navegación. */
 @Composable
 fun KuodraRoot(appViewModel: AppViewModel = koinViewModel()) {
-    val dark by appViewModel.darkTheme.collectAsStateWithLifecycle()
+    val mode by appViewModel.themeMode.collectAsStateWithLifecycle()
     val start by appViewModel.start.collectAsStateWithLifecycle()
+    val dark = when (mode) {
+        ThemeMode.System -> isSystemInDarkTheme()
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
     KuodraTheme(darkTheme = dark) {
         Box(
             Modifier
