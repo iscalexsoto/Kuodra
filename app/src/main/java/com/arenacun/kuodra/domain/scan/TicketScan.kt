@@ -1,9 +1,15 @@
 package com.arenacun.kuodra.domain.scan
 
+import androidx.annotation.Keep
 import com.arenacun.kuodra.domain.model.Money
 import java.time.LocalDate
 
-/** Origen de la imagen escaneada. Se persiste en el [com.arenacun.kuodra.domain.model.Movement]. */
+/**
+ * Origen de la imagen escaneada. Se persiste en el [com.arenacun.kuodra.domain.model.Movement].
+ * `@Keep` porque viaja como argumento type-safe de navegación (ver `UseCase`): protege sus
+ * constantes de la ofuscación de R8 en builds minificados.
+ */
+@Keep
 enum class ScanSource { Camera, Gallery }
 
 /**

@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -294,7 +295,7 @@ private fun TicketScanningAnimation(c: KuodraColors) {
             Modifier
                 .fillMaxWidth()
                 .height(beamHeight)
-                .offset(y = (ticketHeight - beamHeight) * progress)
+                .offset { IntOffset(0, ((ticketHeight - beamHeight) * progress).roundToPx()) }
                 .background(
                     Brush.verticalGradient(
                         listOf(
@@ -309,7 +310,7 @@ private fun TicketScanningAnimation(c: KuodraColors) {
             Modifier
                 .fillMaxWidth()
                 .height(2.dp)
-                .offset(y = (ticketHeight - beamHeight) * progress + beamHeight / 2)
+                .offset { IntOffset(0, ((ticketHeight - beamHeight) * progress + beamHeight / 2).roundToPx()) }
                 .background(c.primary),
         )
     }

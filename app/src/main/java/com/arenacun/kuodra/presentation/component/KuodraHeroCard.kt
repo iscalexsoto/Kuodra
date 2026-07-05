@@ -21,8 +21,8 @@ import com.arenacun.kuodra.presentation.theme.Kuodra
 fun KuodraHeroCard(
     amount: String,
     caption: String,
-    cycleChip: String? = null,
     modifier: Modifier = Modifier,
+    cycleChip: String? = null,
 ) {
     val colors = Kuodra.colors
     Column(

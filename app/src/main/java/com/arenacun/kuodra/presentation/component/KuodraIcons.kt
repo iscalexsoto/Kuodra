@@ -47,8 +47,8 @@ fun KLogoMark(
     cornerRadius: Dp,
     background: Color,
     foreground: Color,
-    gridSize: Dp = boxSize * 0.62f,
     modifier: Modifier = Modifier,
+    gridSize: Dp = boxSize * 0.62f,
 ) {
     Box(
         modifier
@@ -88,7 +88,7 @@ fun PlusIcon(size: Dp, color: Color, modifier: Modifier = Modifier) {
  * 180 = "<" (atrás), 270 = "^".
  */
 @Composable
-fun Chevron(size: Dp, color: Color, degrees: Float = 0f, modifier: Modifier = Modifier) {
+fun Chevron(size: Dp, color: Color, modifier: Modifier = Modifier, degrees: Float = 0f) {
     KIcon(R.drawable.ic_chevron_right, size, color, modifier.rotate(degrees))
 }
 
@@ -110,8 +110,8 @@ fun SearchGlyph(size: Dp, color: Color, modifier: Modifier = Modifier) {
 fun ToneAvatar(
     initials: String,
     tone: AvatarTone,
-    size: Dp = 40.dp,
     modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
 ) {
     val pal = Kuodra.colors.avatar(tone)
     Box(
@@ -134,8 +134,8 @@ fun ToneAvatar(
 fun CategoryTag(
     tag: String,
     tone: AvatarTone,
-    size: Dp = 40.dp,
     modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
 ) {
     val pal = Kuodra.colors.avatar(tone)
     Box(

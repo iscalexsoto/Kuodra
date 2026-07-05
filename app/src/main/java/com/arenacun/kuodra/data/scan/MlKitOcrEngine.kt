@@ -1,7 +1,7 @@
 package com.arenacun.kuodra.data.scan
 
 import android.content.Context
-import android.net.Uri
+import androidx.core.net.toUri
 import com.arenacun.kuodra.domain.scan.OcrEngine
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -21,7 +21,7 @@ import kotlinx.coroutines.tasks.await
 class MlKitOcrEngine(private val context: Context) : OcrEngine {
 
     override suspend fun recognize(imageUri: String): Result<String> = runCatching {
-        val image = InputImage.fromFilePath(context, Uri.parse(imageUri))
+        val image = InputImage.fromFilePath(context, imageUri.toUri())
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         val result = try {
             recognizer.process(image).await()

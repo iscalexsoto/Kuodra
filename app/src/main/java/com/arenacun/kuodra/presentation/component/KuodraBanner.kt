@@ -28,9 +28,9 @@ enum class BannerTone { Warn, Positive, Negative }
 fun KuodraBanner(
     title: String,
     subtitle: String,
+    modifier: Modifier = Modifier,
     tone: BannerTone = BannerTone.Warn,
     leadingIcon: @Composable () -> Unit = {},
-    modifier: Modifier = Modifier,
 ) {
     val colors = Kuodra.colors
     val (accent: Color, tintBg: Color) = when (tone) {

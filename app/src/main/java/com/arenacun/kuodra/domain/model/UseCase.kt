@@ -1,8 +1,14 @@
 package com.arenacun.kuodra.domain.model
 
+import androidx.annotation.Keep
 import kotlinx.serialization.Serializable
 
-/** Caso de uso del espacio: cambia el contenido y la terminología, no el styling. */
+/**
+ * Caso de uso del espacio: cambia el contenido y la terminología, no el styling.
+ * `@Keep` porque se usa como argumento type-safe de navegación: sin él, R8 podría ofuscar
+ * los nombres de las constantes y romper la (de)serialización de la ruta en builds minificados.
+ */
+@Keep
 @Serializable
 enum class UseCase { Personal, Gastos, Caja }
 

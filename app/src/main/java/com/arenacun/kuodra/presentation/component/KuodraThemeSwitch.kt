@@ -24,13 +24,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.arenacun.kuodra.R
 import com.arenacun.kuodra.domain.model.ThemeMode
 import com.arenacun.kuodra.presentation.theme.Kuodra
 
 /** Una opción del switch de tema: modo + ícono + etiqueta. */
-private data class ModeOption(val mode: ThemeMode, @DrawableRes val iconRes: Int, val label: String)
+private data class ModeOption(val mode: ThemeMode, @param:DrawableRes val iconRes: Int, val label: String)
 
 /**
  * Switch triple de tema (Sistema / Claro / Oscuro) con thumb deslizante animado, según el
@@ -66,7 +67,7 @@ fun KuodraThemeSwitch(
         Box(Modifier.matchParentSize()) {
             Box(
                 Modifier
-                    .offset(x = thumbX)
+                    .offset { IntOffset(thumbX.roundToPx(), 0) }
                     .width(slot)
                     .fillMaxHeight()
                     .shadow(2.dp, Kuodra.shape.md, clip = false)
