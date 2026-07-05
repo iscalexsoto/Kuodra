@@ -4,9 +4,10 @@ import com.arenacun.kuodra.domain.model.Session
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * Autenticación sin contraseña (correo + código de un solo uso) contra PocketBase.
- * El flujo OTP es de dos pasos: [requestOtp] (alta-si-no-existe + envío del código) y
- * [verifyOtp] (canje del código por una sesión que se persiste localmente).
+ * Autenticación sin contraseña contra PocketBase. Dos métodos sobre la misma cuenta `users`:
+ * - **Correo + OTP:** [requestOtp] (alta-si-no-existe + envío del código) → [verifyOtp].
+ * - **Google (OAuth2):** [startGoogleSignIn] (abre el navegador) → [completeOAuth2] (canje del
+ *   código del redirect). Ambos persisten la sesión localmente.
  */
 interface AuthRepository {
     /** Sesión activa observable; `null` cuando no hay usuario autenticado. */
@@ -32,6 +33,21 @@ interface AuthRepository {
      * Devuelve la [Session] vigente o `null` si no hay/expiró.
      */
     suspend fun restoreSession(): Session?
+
+    /**
+     * Inicia el login con Google (OAuth2): pide al servidor el proveedor y su reto PKCE, y
+     * devuelve la URL de autorización a abrir en el navegador. El `state`/`codeVerifier` quedan
+     * guardados para el canje posterior en [completeOAuth2].
+     * Proveedor no habilitado o error de red/servidor ⇒ [Result.failure].
+     */
+    suspend fun startGoogleSignIn(): Result<String>
+
+    /**
+     * Completa el login OAuth2 con el `code` y `state` recibidos en el redirect. Valida el
+     * `state` (anti-CSRF), canjea el código por una sesión y la persiste localmente.
+     * `state` no coincidente, sin flujo en curso o error ⇒ [Result.failure].
+     */
+    suspend fun completeOAuth2(code: String, state: String): Result<Unit>
 
     /**
      * Actualiza el nombre del usuario en PocketBase y en la sesión persistida.

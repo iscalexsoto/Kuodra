@@ -20,7 +20,7 @@ cableadas en [`navigation/KuodraNavHost.kt`](../app/src/main/java/com/arenacun/k
 
 | Destino | Pantalla | Prototipo | Entrada |
 |---|---|---|---|
-| `AuthGraph` → `Welcome`/`Email`/`Otp` | auth (correo + OTP real, PocketBase) | `Kuodra Auth` | inicio (si no hay sesión) |
+| `AuthGraph` → `Welcome`/`Email`/`Otp` | auth (correo + OTP y Google OAuth2, PocketBase) | `Kuodra Auth` | inicio (si no hay sesión) |
 | `Name` | onboarding: captura el nombre del usuario | — | tras OTP (o al arrancar sin nombre) |
 | `Mode` / `CreateSpace(useCase)` | onboarding | `isMode`/`isCreate` | tras `Name` |
 | `Dashboard` | dashboard | `scrDashboard` | raíz de app |
@@ -135,7 +135,7 @@ com.arenacun.kuodra
       KuodraBottomSheet        # wrapper de ModalBottomSheet con tokens Kuodra
       AddOptionsSheetContent   # sheet "Agregar": escanear (ic_camera) / galería (ic_image_up) / manual (ic_notebook)
     feature/
-      auth/        AuthViewModel + AuthUiState + Welcome/Email/Otp
+      auth/        AuthViewModel + AuthUiState + Welcome/Email/Otp + OAuthRedirectBus (deeplink OAuth2)
       onboarding/  NameViewModel, ModeViewModel, CreateSpaceViewModel + Name/Mode/CreateSpace
       dashboard/   DashboardViewModel + DashboardUiState (incl. DashboardOverlay/LeaveStep) + DashboardScreen
       movement/    AddMovement{ViewModel,UiState,Screen}, MovementDetail{ViewModel,Screen}
@@ -212,7 +212,18 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
   con sesión sin nombre→`Name`, con sesión sin onboarding→`Mode`, con sesión configurada→`Dashboard`
   (mientras tanto, `Splash`).
 - El `UseCase` elegido en onboarding y el tema oscuro se **persisten en DataStore** (sobreviven reinicios).
-- Google OAuth: **diferido** (botón "Próximamente" deshabilitado en `WelcomeScreen`).
+- **Login con Google (OAuth2):** flujo authorization-code + PKCE (PocketBase no soporta el ID-token
+  nativo de Android, solo el de código). `AuthRepository.startGoogleSignIn()` pide el proveedor a
+  `auth-methods`, guarda `state`+`codeVerifier` y devuelve la `authURL`; `WelcomeScreen` la abre en un
+  **Custom Tab** (`androidx.browser`). Google redirige al **App Link** `https://<dominio>/oauth-redirect`,
+  que `MainActivity` (`launchMode=singleTop`, intent-filter `autoVerify`) captura y publica en el
+  `OAuthRedirectBus` (singleton Koin, `SharedFlow` replay=1 para el arranque en frío). `WelcomeScreen`
+  lo consume y llama `AuthViewModel.completeOAuth2(code, state)` → `AuthRepository.completeOAuth2`, que
+  **valida el `state`** (anti-CSRF), canjea vía `auth-with-oauth2` y persiste la sesión (nombre desde
+  `meta` si el registro no lo trae, para saltarse la pantalla `Name`). El redirect sale de
+  `BuildConfig.OAUTH_REDIRECT_URL` (`local.properties`), que también alimenta el host/path del
+  intent-filter (`manifestPlaceholders`). Es **genérico**: añadir Facebook/Apple es solo config
+  (ver [`docs/POCKETBASE.md`](POCKETBASE.md)).
 
 ### Observabilidad (telemetría remota, casera sobre PocketBase)
 - Todo pasa por el **puerto neutral** `domain/telemetry/Telemetry` (breadcrumbs, `log`, `capture`,

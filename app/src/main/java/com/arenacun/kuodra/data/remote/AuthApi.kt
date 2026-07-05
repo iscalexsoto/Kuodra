@@ -1,6 +1,8 @@
 package com.arenacun.kuodra.data.remote
 
+import com.arenacun.kuodra.data.remote.dto.AuthMethodsResponse
 import com.arenacun.kuodra.data.remote.dto.AuthResponse
+import com.arenacun.kuodra.data.remote.dto.AuthWithOAuth2Request
 import com.arenacun.kuodra.data.remote.dto.AuthWithOtpRequest
 import com.arenacun.kuodra.data.remote.dto.CreateUserRequest
 import com.arenacun.kuodra.data.remote.dto.RequestOtpRequest
@@ -8,6 +10,7 @@ import com.arenacun.kuodra.data.remote.dto.RequestOtpResponse
 import com.arenacun.kuodra.data.remote.dto.UpdateUserRequest
 import com.arenacun.kuodra.data.remote.dto.UserRecordDto
 import io.ktor.client.call.body
+import io.ktor.client.request.get
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -31,6 +34,17 @@ interface AuthApi {
 
     /** Edita el nombre del registro del usuario; devuelve el registro actualizado. */
     suspend fun updateUser(userId: String, name: String, token: String): UserRecordDto
+
+    /** Lista los métodos de auth del servidor (incluye los proveedores OAuth2 habilitados). */
+    suspend fun listAuthMethods(): AuthMethodsResponse
+
+    /** Canjea el `code` de OAuth2 (+ PKCE `codeVerifier`) por una sesión (token + registro). */
+    suspend fun authWithOAuth2(
+        provider: String,
+        code: String,
+        codeVerifier: String,
+        redirectURL: String,
+    ): AuthResponse
 }
 
 /**
@@ -75,6 +89,20 @@ class KtorAuthApi(
             jsonBody()
             pocketBaseAuth(token)
             setBody(UpdateUserRequest(name))
+        }.body()
+
+    override suspend fun listAuthMethods(): AuthMethodsResponse =
+        client.http.get(client.collectionUrl("auth-methods")).body()
+
+    override suspend fun authWithOAuth2(
+        provider: String,
+        code: String,
+        codeVerifier: String,
+        redirectURL: String,
+    ): AuthResponse =
+        client.http.post(client.collectionUrl("auth-with-oauth2")) {
+            jsonBody()
+            setBody(AuthWithOAuth2Request(provider, code, codeVerifier, redirectURL))
         }.body()
 
     private fun randomPassword(): String {

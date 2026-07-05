@@ -11,4 +11,8 @@ data class AuthUiState(
     /** Verificando el código de 6 dígitos contra el servidor. */
     val verifying: Boolean = false,
     val otpError: Boolean = false,
+    /** Login con Google en curso (pidiendo el proveedor o canjeando el código). */
+    val googleLoading: Boolean = false,
+    /** Mensaje de error del login con Google (red/servidor/cancelación). */
+    val authError: String? = null,
 )

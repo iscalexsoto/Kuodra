@@ -36,6 +36,17 @@ class AuthViewModel(
     private val _otpVerified = Channel<StartState>(Channel.BUFFERED)
     val otpVerified = _otpVerified.receiveAsFlow()
 
+    /** Evento de una sola vez: abrir la URL de autorización de Google en el navegador. */
+    private val _openOAuthUrl = Channel<String>(Channel.BUFFERED)
+    val openOAuthUrl = _openOAuthUrl.receiveAsFlow()
+
+    /**
+     * Evento de una sola vez: el login con Google se completó. Canal propio (separado de
+     * [otpVerified]) para que no compitan los colectores de Welcome y Otp por la misma emisión.
+     */
+    private val _oauthVerified = Channel<StartState>(Channel.BUFFERED)
+    val oauthVerified = _oauthVerified.receiveAsFlow()
+
     fun onEmailChange(value: String) {
         _uiState.update {
             it.copy(email = value, emailValid = authRepository.isValidEmail(value), requestError = null)
@@ -56,6 +67,41 @@ class AuthViewModel(
             } else {
                 _uiState.update {
                     it.copy(requestError = "No pudimos enviar el código. Revisa tu conexión e inténtalo de nuevo.")
+                }
+            }
+        }
+    }
+
+    /** Pide al servidor la URL de autorización de Google y la emite para abrir el navegador. */
+    fun startGoogleSignIn() {
+        if (_uiState.value.googleLoading) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(googleLoading = true, authError = null) }
+            val result = authRepository.startGoogleSignIn()
+            // Se apaga el loading tras obtener la URL: el resto del flujo ocurre en el navegador,
+            // y si el usuario lo cancela no queremos dejar el botón deshabilitado para siempre.
+            _uiState.update { it.copy(googleLoading = false) }
+            result.onSuccess { url -> _openOAuthUrl.send(url) }
+                .onFailure {
+                    _uiState.update {
+                        it.copy(authError = "No pudimos iniciar sesión con Google. Inténtalo de nuevo.")
+                    }
+                }
+        }
+    }
+
+    /** Completa el login con Google canjeando el `code`/`state` del redirect y resuelve el destino. */
+    fun completeOAuth2(code: String, state: String) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(googleLoading = true, authError = null) }
+            val result = authRepository.completeOAuth2(code, state)
+            _uiState.update { it.copy(googleLoading = false) }
+            if (result.isSuccess) {
+                val session = authRepository.session.filterNotNull().first()
+                _oauthVerified.send(resolveStartState(session, spaceRepository.isConfigured()))
+            } else {
+                _uiState.update {
+                    it.copy(authError = "No pudimos completar el inicio con Google. Inténtalo de nuevo.")
                 }
             }
         }

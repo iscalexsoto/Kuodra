@@ -6,6 +6,7 @@ import com.arenacun.kuodra.presentation.app.AppViewModel
 import com.arenacun.kuodra.presentation.feature.allmovements.AllMovementsViewModel
 import com.arenacun.kuodra.presentation.feature.categories.CategoriesViewModel
 import com.arenacun.kuodra.presentation.feature.auth.AuthViewModel
+import com.arenacun.kuodra.presentation.feature.auth.OAuthRedirectBus
 import com.arenacun.kuodra.presentation.feature.dashboard.DashboardViewModel
 import com.arenacun.kuodra.presentation.feature.history.HistoryDetailViewModel
 import com.arenacun.kuodra.presentation.feature.history.HistoryViewModel
@@ -25,6 +26,9 @@ import org.koin.dsl.module
 
 /** ViewModels de la capa presentation. */
 val presentationModule = module {
+    // Puente MainActivity (deeplink OAuth2) ↔ pantalla de auth. Singleton de proceso.
+    single { OAuthRedirectBus() }
+
     viewModelOf(::AppViewModel)
     viewModelOf(::AuthViewModel)
     viewModelOf(::NameViewModel)

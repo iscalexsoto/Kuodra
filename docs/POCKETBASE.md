@@ -27,6 +27,178 @@ Flujo cliente: `request-otp` → `auth-with-otp` → `auth-refresh` (ver `KtorAu
 
 ---
 
+## `users` (Auth) — login con Google (OAuth2)
+
+Segundo método de login sobre la **misma** colección `users` (convive con correo + OTP; un
+usuario con el mismo email se unifica en un solo registro). En Android el flujo es
+**authorization-code + PKCE con Custom Tabs y redirect por App Link HTTPS** (PocketBase soporta
+el flujo de código, **no** el de *ID token* nativo de Google). El cliente hace `auth-methods` →
+abre `authURL` en un Custom Tab → Google redirige al App Link
+`https://<TU_DOMINIO>/oauth-redirect?code&state` → la app captura el código → `auth-with-oauth2`.
+
+> **Requisito de la app:** además de configurar el servidor, hace falta la clave
+> `oauth.redirect.url=https://<TU_DOMINIO>/oauth-redirect` en `local.properties` (no versionada).
+> De ahí salen `BuildConfig.OAUTH_REDIRECT_URL` y el `host`/`path` del intent-filter del App Link
+> (`manifestPlaceholders` en `app/build.gradle.kts`). Debe coincidir **exactamente** con el
+> redirect registrado en Google.
+
+### 1. Google Cloud Console (una vez)
+
+1. **APIs & Services → OAuth consent screen**: User Type **External**; completar App name,
+   *user support email* y *developer email*. Añadir scopes básicos (`email`, `profile`,
+   `openid`). Publicar (o añadir testers si queda en modo *Testing*).
+2. **APIs & Services → Credentials → Create Credentials → OAuth client ID**:
+   - Application type: **Web application** (NO "Android"; PocketBase usa cliente web con secret,
+     y Google solo admite `redirect_uri` **HTTPS** para ese tipo — por eso el redirect es un App
+     Link y no un custom scheme).
+   - **Authorized redirect URIs** → añadir **exactamente** `https://<TU_DOMINIO>/oauth-redirect`
+     (debe coincidir carácter por carácter con `oauth.redirect.url`). Para probar en local también
+     se puede añadir `http://127.0.0.1:8090/api/oauth2-redirect`.
+   - Guardar el **Client ID** y **Client Secret** generados.
+
+### 2. PocketBase admin
+
+- Collections → `users` → **Edit collection (engranaje) → Options → OAuth2** → habilitar y
+  seleccionar **Google** → pegar **Client ID** y **Client Secret** → Save.
+- **Mapping de campos al crear el usuario** (Options → OAuth2 → *Optional users create fields
+  mapping*): aplica **solo al crear** la cuenta desde OAuth2 (primer login). Mapear **OAuth2 full
+  name → `name`** para que el registro nazca con el nombre real de Google y el usuario se salte la
+  pantalla de onboarding "¿cómo te llamas?". El resto (avatar, id, username) puede quedar sin mapear
+  (Kuodra no los usa; `username` lo autogenera PocketBase). Si no se mapea, el cliente igual cae al
+  `meta.name` de la respuesta como respaldo, pero el mapping deja el nombre persistido en el registro.
+- OAuth2 **no** está disponible para la colección `_superusers` (solo colecciones auth normales).
+- **Vinculación por email = automática (no hay toggle en el admin).** Al entrar con Google,
+  PocketBase busca un registro `users` con el mismo correo y **enlaza** la identidad de Google en
+  vez de duplicar (salvo que esa cuenta Google ya esté enlazada a otro registro). Así, quien se dio
+  de alta por OTP con `x@gmail.com` y luego entra con Google del mismo correo cae en el mismo
+  registro, sin configurar nada.
+- **Requisito de versión: PocketBase ≥ v0.22.14** (idealmente la última). Corrige el advisory
+  [GHSA-m93w-4fxv-r35v](https://github.com/pocketbase/pocketbase/security/advisories/GHSA-m93w-4fxv-r35v):
+  al enlazar OAuth2 a un usuario previo **no verificado** resetea su contraseña. Inofensivo aquí
+  porque solo entramos por OTP/OAuth (sin contraseña) y el correo de Google viene verificado.
+
+### 3. App Link (verificación del dominio) — servido por el propio PocketBase
+
+Como el backend ya es público en `https://<TU_DOMINIO>` (p. ej. vía Cloudflare Tunnel → PocketBase),
+**no hace falta un sitio web aparte: el propio PocketBase sirve los dos endpoints** con un hook JS.
+Crear `pb_hooks/oauth_links.pb.js` junto al binario y reiniciar PocketBase:
+
+```js
+/// <reference path="../pb_data/types.d.ts" />
+
+// Digital Asset Links: permite que Android abra la app (App Link) en vez del navegador al volver
+// del login con Google. Debe responder 200 + application/json, SIN redirecciones. Incluir la
+// huella SHA-256 de CADA firma que uses (debug y, en producción, release / Play App Signing).
+routerAdd("GET", "/.well-known/assetlinks.json", (e) => {
+    return e.json(200, [{
+        relation: ["delegate_permission/common.handle_all_urls"],
+        target: {
+            namespace: "android_app",
+            package_name: "com.arenacun.kuodra",
+            sha256_cert_fingerprints: ["<SHA256_DEBUG>", "<SHA256_RELEASE>"],
+        },
+    }])
+})
+
+// Página de aterrizaje del redirect. Si el App Link está verificado y la app instalada, Android
+// intercepta esta URL y ni se muestra; es solo el fallback si se abre en navegador.
+routerAdd("GET", "/oauth-redirect", (e) => {
+    return e.html(200, "<!doctype html><meta charset=utf-8><title>Kuodra</title>" +
+        "<p>Ya puedes volver a la app Kuodra.</p>")
+})
+```
+
+- **Huella SHA-256 de debug:** `./gradlew :app:signingReport` (línea `SHA-256:` del variant `debug`)
+  o `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android`.
+- **Al sacar build de release:** añade también la huella SHA-256 de **release** al array
+  `sha256_cert_fingerprints` (y reinicia PocketBase). Sale del variant `release` de
+  `./gradlew :app:signingReport` o, si usas **Play App Signing**, de Play Console → *App integrity →
+  App signing key certificate*. Debug y release pueden convivir en el mismo array.
+- **Verificar** (no debe haber 301/302 ni 404): `curl -i https://<TU_DOMINIO>/.well-known/assetlinks.json`
+  (content-type `application/json`) y `curl -i https://<TU_DOMINIO>/oauth-redirect`. Validador oficial:
+  `https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://<TU_DOMINIO>&relation=delegate_permission/common.handle_all_urls`.
+- El `intent-filter` con `android:autoVerify="true"` en `.MainActivity` (host/ruta de
+  `oauth.redirect.url`) dispara la verificación al instalar. Comprobar en el dispositivo:
+  `adb shell pm get-app-links com.arenacun.kuodra` (debe salir `verified` para el host).
+- Alternativa: servir `assetlinks.json` como archivo estático en `pb_public/.well-known/assetlinks.json`
+  (para `/oauth-redirect` es mejor el hook, para evitar el redirect por barra final).
+
+> **⚠️ ORDEN CORRECTO (importante):** Android verifica el App Link **una sola vez al instalar** y
+> **cachea el resultado** (no reintenta solo). Por eso: **1º** deja el hook activo + PocketBase
+> reiniciado y confirma con `curl` que `assetlinks.json` responde 200; **2º recién entonces**
+> instala/reinstala la app. Si instalas antes de que el endpoint esté en línea, la verificación
+> queda cacheada como **fallida** y el login abrirá el navegador (verás la página de `/oauth-redirect`)
+> en vez de la app.
+
+#### Troubleshooting: el redirect abre el navegador y no la app
+
+Síntoma: al volver de Google se queda en la página "Ya puedes volver a la app Kuodra" y no entra.
+Significa que el App Link **no está verificado** en ese dispositivo. Diagnóstico y arreglo:
+
+```bash
+# Estado de verificación (con varios dispositivos, añade -s <serial>)
+adb shell pm get-app-links com.arenacun.kuodra
+#   api.kuodra.com: verified   → OK
+#   api.kuodra.com: 1024       → FALLÓ (verificación cacheada como error; códigos >=1024 = fallo)
+
+# Arreglo 1 (no destructivo): re-lanzar la verificación. Es ASÍNCRONA: espera ~5-10 s y reconsulta,
+# no confíes en la primera lectura inmediata.
+adb shell pm verify-app-links --re-verify com.arenacun.kuodra
+
+# Arreglo 2 (garantizado): desinstalar y reinstalar con el endpoint YA en línea.
+adb uninstall com.arenacun.kuodra && ./gradlew :app:installDebug
+
+# Último recurso (solo ese dispositivo, sin depender de autoVerify): aprobar el dominio a mano.
+adb shell pm set-app-links-user-selection --user cur --package com.arenacun.kuodra true api.kuodra.com
+```
+
+Antes de tocar el dispositivo, confirma que el servidor está bien (si esto responde correcto, el
+problema es el caché del dispositivo, no el backend):
+
+```bash
+curl -i https://api.kuodra.com/.well-known/assetlinks.json   # 200 + application/json, sin 3xx/404
+curl -s "https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://api.kuodra.com&relation=delegate_permission/common.handle_all_urls"
+```
+
+Otras causas si `curl` **no** responde bien: `oauth.redirect.url` no estaba en `local.properties` al
+compilar (el `intent-filter` queda con el host por defecto `kuodra.app`), o Cloudflare mete un
+redirect/challenge sobre `/.well-known/*` (el fetch del verificador debe recibir 200 directo).
+
+### Contrato HTTP (lo que consume `KtorAuthApi`)
+
+```
+GET  {POCKETBASE_URL}/api/collections/users/auth-methods
+200: { "oauth2": { "enabled": true, "providers": [
+        { "name": "google", "state": "…", "codeVerifier": "…",
+          "codeChallenge": "…", "codeChallengeMethod": "S256",
+          "authURL": "https://accounts.google.com/o/oauth2/auth?...&redirect_uri=" } ] }, ... }
+
+POST {POCKETBASE_URL}/api/collections/users/auth-with-oauth2
+Body: { "provider": "google", "code": "<de Google>",
+        "codeVerifier": "<el del provider>", "redirectURL": "https://<TU_DOMINIO>/oauth-redirect" }
+200:  { "token": "…", "record": { "id", "email", "name", … },
+        "meta": { "name", "email", "avatarURL", … } }
+```
+
+- La URL a abrir en el Custom Tab = `provider.authURL` + `URLEncoder(redirectURL)` (el `authURL`
+  termina en `redirect_uri=` para que el cliente le concatene su redirect).
+- El `state` devuelto por Google debe **coincidir** con `provider.state` (anti-CSRF); si no, el
+  cliente aborta sin canjear.
+- `redirectURL` debe ser **idéntico** en los 3 sitios: Google console, la URL abierta y el body
+  de `auth-with-oauth2`.
+- `meta.name` prellena el nombre y permite saltarse la pantalla de onboarding "¿cómo te llamas?"
+  para usuarios de Google (el cliente lo usa como respaldo si `record.name` viene vacío).
+
+> **Versión de PocketBase:** la forma `oauth2.providers[]` es de PB v0.23+. En versiones
+> anteriores el endpoint era `list-auth-methods` con `authProviders[]`; confirmar contra la
+> instancia real antes de fijar los DTOs.
+
+> **Añadir más proveedores (Facebook/Apple/…):** el flujo del cliente es genérico. Basta
+> habilitar el proveedor aquí (paso 2) + registrar su app en la consola correspondiente + pasar
+> su `name` en el cliente. No hace falta tocar el contrato HTTP.
+
+---
+
 ## Colecciones de datos (sincronización offline-first)
 
 Para que la sincronización de **gastos personales** funcione end-to-end. El cliente usa Room como
@@ -253,6 +425,7 @@ Escaneo de tickets:
 
 | Fecha      | Cambio                                                                 |
 |------------|------------------------------------------------------------------------|
+| 2026-07-04 | Login con Google (OAuth2) en `users`: cliente Web en Google Cloud + provider Google en PB + App Link `https://<TU_DOMINIO>/oauth-redirect` con `assetlinks.json`. Flujo auth-code + PKCE vía Custom Tabs (`auth-methods` / `auth-with-oauth2`). |
 | 2026-07-03 | Campo `items` (json) en `movements`. Faltaba desde que existen las partidas: PocketBase ignoraba el campo del DTO y el pull del sync **borraba las partidas locales** tras cada guardado. |
 | 2026-07-02 | Campos `scanRawText` y `scanSource` en `movements` + ruta custom `/api/kuodra/analyze-ticket` (hook JS + `MISTRAL_API_KEY`) para el escaneo de tickets. |
 | 2026-07-01 | Alta de `telemetry_events` (observabilidad remota).                    |

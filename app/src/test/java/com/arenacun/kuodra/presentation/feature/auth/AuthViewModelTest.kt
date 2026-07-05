@@ -23,8 +23,12 @@ class AuthViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
-    /** Fake que simula el canje del OTP: al verificar, publica la sesión que trae el backend. */
-    private class FakeAuthRepository(private val verifiedSession: Session) : AuthRepository {
+    /** Fake que simula el canje del OTP/OAuth2: al verificar, publica la sesión del backend. */
+    private class FakeAuthRepository(
+        private val verifiedSession: Session,
+        private val startGoogleResult: Result<String> = Result.success("https://auth.url/redirect_uri="),
+        private val completeResult: Result<Unit> = Result.success(Unit),
+    ) : AuthRepository {
         private val _session = MutableStateFlow<Session?>(null)
         override val session: StateFlow<Session?> = _session
         override fun isValidEmail(email: String): Boolean = true
@@ -32,6 +36,11 @@ class AuthViewModelTest {
         override suspend fun verifyOtp(code: String): Result<Unit> {
             _session.value = verifiedSession
             return Result.success(Unit)
+        }
+        override suspend fun startGoogleSignIn(): Result<String> = startGoogleResult
+        override suspend fun completeOAuth2(code: String, state: String): Result<Unit> {
+            if (completeResult.isSuccess) _session.value = verifiedSession
+            return completeResult
         }
         override suspend fun restoreSession(): Session? = _session.value
         override suspend fun updateName(name: String): Result<Unit> = Result.success(Unit)
@@ -94,6 +103,59 @@ class AuthViewModelTest {
         advanceUntilIdle()
 
         assertEquals(StartState.Ready, emitted)
+        job.cancel()
+    }
+
+    @Test
+    fun `startGoogleSignIn emits the auth URL to open`() = runTest {
+        val viewModel = AuthViewModel(
+            authRepository = FakeAuthRepository(Session("u1", "a@b.com", "Alex")),
+            spaceRepository = FakeSpaceRepository(configured = true),
+        )
+        var url: String? = null
+        val job = launch { viewModel.openOAuthUrl.collect { url = it } }
+
+        viewModel.startGoogleSignIn()
+        advanceUntilIdle()
+
+        assertEquals("https://auth.url/redirect_uri=", url)
+        job.cancel()
+    }
+
+    @Test
+    fun `completeOAuth2 success routes with the resolved StartState`() = runTest {
+        val viewModel = AuthViewModel(
+            authRepository = FakeAuthRepository(Session("u1", "a@b.com", "Alex")),
+            spaceRepository = FakeSpaceRepository(configured = true),
+        )
+        var emitted: StartState? = null
+        val job = launch { viewModel.oauthVerified.collect { emitted = it } }
+
+        viewModel.completeOAuth2(code = "c", state = "s")
+        advanceUntilIdle()
+
+        assertEquals(StartState.Ready, emitted)
+        job.cancel()
+    }
+
+    @Test
+    fun `completeOAuth2 failure surfaces an error and does not route`() = runTest {
+        val viewModel = AuthViewModel(
+            authRepository = FakeAuthRepository(
+                Session("u1", "a@b.com", "Alex"),
+                completeResult = Result.failure(RuntimeException("bad code")),
+            ),
+            spaceRepository = FakeSpaceRepository(configured = true),
+        )
+        var emitted: StartState? = null
+        val job = launch { viewModel.oauthVerified.collect { emitted = it } }
+
+        viewModel.completeOAuth2(code = "c", state = "s")
+        advanceUntilIdle()
+
+        assertEquals(null, emitted)
+        assertEquals(false, viewModel.uiState.value.googleLoading)
+        assertEquals(true, viewModel.uiState.value.authError != null)
         job.cancel()
     }
 }

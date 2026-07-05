@@ -3,7 +3,6 @@ package com.arenacun.kuodra.presentation.feature.settle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.arenacun.kuodra.domain.model.Calc
-import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository

@@ -52,8 +52,18 @@ fun KuodraNavHost(
     ) {
         // ===== Auth (grafo anidado: comparte AuthViewModel) =====
         navigation<Destination.AuthGraph>(startDestination = Destination.Welcome) {
-            composable<Destination.Welcome> {
-                WelcomeScreen(onContinue = { navController.navigate(Destination.Email) })
+            composable<Destination.Welcome> { entry ->
+                WelcomeScreen(
+                    onContinue = { navController.navigate(Destination.Email) },
+                    // Google resuelve el login desde aquí (sin pasar por Otp): mismo enrutado
+                    // con el estado ya resuelto (nombre/onboarding/dashboard).
+                    onVerified = { state ->
+                        navController.navigate(state.toDestination()) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                        }
+                    },
+                    viewModel = entry.sharedAuthViewModel(navController),
+                )
             }
             composable<Destination.Email> { entry ->
                 EmailScreen(

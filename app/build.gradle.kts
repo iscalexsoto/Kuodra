@@ -1,4 +1,5 @@
 import com.android.build.api.variant.impl.VariantOutputImpl
+import java.net.URI
 import java.util.Properties
 
 plugins {
@@ -14,6 +15,14 @@ val pocketbaseUrl: String = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }.getProperty("pocketbase.url") ?: "http://10.0.2.2:8090"
+
+// URL de redirect del OAuth2 (App Link HTTPS). Debe coincidir EXACTAMENTE con el redirect
+// registrado en Google Cloud y con el intent-filter de `MainActivity`. Se lee de
+// `local.properties` (`oauth.redirect.url=…`, no versionada); si falta, un placeholder de dev.
+val oauthRedirectUrl: String = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}.getProperty("oauth.redirect.url") ?: "https://kuodra.app/oauth-redirect"
 
 // Nombre de versión de la app; se reutiliza para nombrar el APK generado.
 val appVersionName = "1.0"
@@ -34,6 +43,13 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "POCKETBASE_URL", "\"$pocketbaseUrl\"")
+        buildConfigField("String", "OAUTH_REDIRECT_URL", "\"$oauthRedirectUrl\"")
+
+        // Host y ruta del App Link de OAuth2, derivados de la URL de redirect, para inyectarlos
+        // en el intent-filter del manifest sin duplicar el literal.
+        val redirectUri = URI(oauthRedirectUrl)
+        manifestPlaceholders["oauthRedirectHost"] = redirectUri.host ?: ""
+        manifestPlaceholders["oauthRedirectPath"] = redirectUri.path ?: "/oauth-redirect"
     }
 
     buildTypes {
@@ -86,6 +102,9 @@ dependencies {
     implementation(libs.androidx.compose.foundation.layout)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.navigation.compose)
+    // Custom Tabs para el flujo OAuth2 (login con Google): abre la pantalla de consentimiento
+    // en el navegador del sistema y vuelve a la app por el App Link de redirect.
+    implementation(libs.androidx.browser)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 

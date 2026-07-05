@@ -4,7 +4,11 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.arenacun.kuodra.MainDispatcherRule
 import com.arenacun.kuodra.data.local.SessionStore
 import com.arenacun.kuodra.data.remote.AuthApi
+import com.arenacun.kuodra.data.remote.dto.AuthMethodsResponse
 import com.arenacun.kuodra.data.remote.dto.AuthResponse
+import com.arenacun.kuodra.data.remote.dto.OAuth2Config
+import com.arenacun.kuodra.data.remote.dto.OAuth2ProviderInfo
+import com.arenacun.kuodra.data.remote.dto.OAuthMeta
 import com.arenacun.kuodra.data.remote.dto.RequestOtpResponse
 import com.arenacun.kuodra.data.remote.dto.UserRecordDto
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -40,11 +44,20 @@ class AuthRepositoryImplTest {
         var createUserThrows: Throwable? = null,
         var authWithOtpThrows: Throwable? = null,
         var updateUserThrows: Throwable? = null,
+        // OAuth2
+        var oauthProviders: List<OAuth2ProviderInfo> = listOf(
+            OAuth2ProviderInfo(
+                name = "google", state = "st_1", codeVerifier = "cv_1",
+                authURL = "https://accounts.google.com/o/oauth2/auth?redirect_uri=",
+            ),
+        ),
+        var oauthMeta: OAuthMeta? = null,
     ) : AuthApi {
         var createUserCalled = false
         var requestOtpEmail: String? = null
         var updateUserName: String? = null
         var updateUserToken: String? = null
+        var authWithOAuth2Args: List<String>? = null
 
         override suspend fun createUser(email: String): UserRecordDto {
             createUserCalled = true
@@ -70,6 +83,19 @@ class AuthRepositoryImplTest {
             updateUserToken = token
             record = record.copy(name = name)
             return record
+        }
+
+        override suspend fun listAuthMethods(): AuthMethodsResponse =
+            AuthMethodsResponse(OAuth2Config(enabled = true, providers = oauthProviders))
+
+        override suspend fun authWithOAuth2(
+            provider: String,
+            code: String,
+            codeVerifier: String,
+            redirectURL: String,
+        ): AuthResponse {
+            authWithOAuth2Args = listOf(provider, code, codeVerifier, redirectURL)
+            return AuthResponse(token, record, meta = oauthMeta)
         }
     }
 
@@ -178,6 +204,79 @@ class AuthRepositoryImplTest {
 
         assertTrue(result.isFailure)
         assertEquals("Alex", store.sessionFlow.first()!!.name)
+    }
+
+    @Test
+    fun `startGoogleSignIn returns the authURL with the appended redirect`() = runTest {
+        val api = FakeAuthApi()
+        val repo = AuthRepositoryImpl(api, sessionStore(), oauthRedirectUrl = "https://kuodra.app/oauth-redirect")
+
+        val result = repo.startGoogleSignIn()
+
+        assertTrue(result.isSuccess)
+        // authURL base + redirect URL codificado.
+        assertTrue(result.getOrThrow().startsWith("https://accounts.google.com/o/oauth2/auth?redirect_uri="))
+        assertTrue(result.getOrThrow().endsWith("https%3A%2F%2Fkuodra.app%2Foauth-redirect"))
+    }
+
+    @Test
+    fun `startGoogleSignIn fails when google provider is not enabled`() = runTest {
+        val api = FakeAuthApi(oauthProviders = emptyList())
+        val repo = AuthRepositoryImpl(api, sessionStore())
+
+        assertTrue(repo.startGoogleSignIn().isFailure)
+    }
+
+    @Test
+    fun `completeOAuth2 with matching state persists the session`() = runTest {
+        val store = sessionStore()
+        val api = FakeAuthApi(record = UserRecordDto("g1", "gmail@correo.com", "Alex G"))
+        val repo = AuthRepositoryImpl(api, store, oauthRedirectUrl = "https://kuodra.app/oauth-redirect")
+        repo.startGoogleSignIn()
+
+        val result = repo.completeOAuth2(code = "auth_code", state = "st_1")
+
+        assertTrue(result.isSuccess)
+        assertEquals(listOf("google", "auth_code", "cv_1", "https://kuodra.app/oauth-redirect"), api.authWithOAuth2Args)
+        val session = store.sessionFlow.first()
+        assertEquals("g1", session!!.userId)
+        assertEquals("Alex G", session.name)
+    }
+
+    @Test
+    fun `completeOAuth2 falls back to meta name when the record has none`() = runTest {
+        val store = sessionStore()
+        val api = FakeAuthApi(
+            record = UserRecordDto("g1", "gmail@correo.com", name = ""),
+            oauthMeta = OAuthMeta(name = "Alex from Google"),
+        )
+        val repo = AuthRepositoryImpl(api, store)
+        repo.startGoogleSignIn()
+
+        repo.completeOAuth2(code = "auth_code", state = "st_1")
+
+        assertEquals("Alex from Google", store.sessionFlow.first()!!.name)
+    }
+
+    @Test
+    fun `completeOAuth2 with mismatched state fails and keeps no session`() = runTest {
+        val store = sessionStore()
+        val api = FakeAuthApi()
+        val repo = AuthRepositoryImpl(api, store)
+        repo.startGoogleSignIn()
+
+        val result = repo.completeOAuth2(code = "auth_code", state = "forged")
+
+        assertTrue(result.isFailure)
+        assertNull(api.authWithOAuth2Args) // ni siquiera se intentó el canje
+        assertNull(store.sessionFlow.first())
+    }
+
+    @Test
+    fun `completeOAuth2 without a prior startGoogleSignIn fails`() = runTest {
+        val repo = AuthRepositoryImpl(FakeAuthApi(), sessionStore())
+
+        assertTrue(repo.completeOAuth2(code = "c", state = "s").isFailure)
     }
 
     @Test
