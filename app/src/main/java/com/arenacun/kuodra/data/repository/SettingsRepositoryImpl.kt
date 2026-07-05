@@ -2,6 +2,7 @@ package com.arenacun.kuodra.data.repository
 
 import com.arenacun.kuodra.data.local.KuodraSeedSource
 import com.arenacun.kuodra.data.mapper.toSettlementRecord
+import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.SettlementRecord
 import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.UseCase
@@ -18,9 +19,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * Ajustes del espacio. **Personal** persiste el presupuesto vía [BudgetRepository] y el historial
- * vía [SnapshotRepository] (Room + sync); el resto de campos Personal (nombre implícito) y los
- * ajustes de Gastos/Caja siguen en memoria (seed) hasta que entren en alcance.
+ * Ajustes del espacio. **Personal** es real: presupuesto vía [BudgetRepository] e historial vía
+ * [SnapshotRepository] (Room + sync), sobre una base propia sin seed. **Gastos/Caja** siguen en
+ * memoria (seed) hasta que entren en alcance.
  */
 class SettingsRepositoryImpl(
     private val seed: KuodraSeedSource,
@@ -36,10 +37,13 @@ class SettingsRepositoryImpl(
     private fun otherFlow(useCase: UseCase): MutableStateFlow<SpaceSettings> =
         others.getOrPut(useCase) { MutableStateFlow(seed.settings(useCase)) }
 
-    /** Personal: base del seed con el presupuesto persistido superpuesto. */
+    /**
+     * Personal: base propia (sin seed) con el presupuesto persistido superpuesto. La UI de Personal
+     * solo usa `budget` + categorías + tema; `name`/`members`/`fund`/`reminder` no se muestran.
+     */
     private val personal: StateFlow<SpaceSettings> = budgetRepository.budget
-        .map { budget -> seed.settings(UseCase.Personal).copy(budget = budget) }
-        .stateIn(scope, SharingStarted.Eagerly, seed.settings(UseCase.Personal))
+        .map { budget -> PERSONAL_BASE.copy(budget = budget) }
+        .stateIn(scope, SharingStarted.Eagerly, PERSONAL_BASE)
 
     override fun settings(useCase: UseCase): StateFlow<SpaceSettings> =
         if (useCase == UseCase.Personal) personal else otherFlow(useCase)
@@ -58,4 +62,15 @@ class SettingsRepositoryImpl(
 
     override fun historyEntry(useCase: UseCase, id: String): SettlementRecord? =
         history(useCase).find { it.id == id }
+
+    private companion object {
+        /** Base Personal sin dependencia del seed; el presupuesto real se superpone. */
+        val PERSONAL_BASE = SpaceSettings(
+            name = "",
+            members = emptyList(),
+            budget = BudgetConfig.Default,
+            fund = null,
+            reminderEnabled = false,
+        )
+    }
 }

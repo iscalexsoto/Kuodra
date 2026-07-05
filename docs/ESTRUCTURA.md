@@ -4,10 +4,12 @@ Referencia viva del código. Complementa a [`CLAUDE.md`](../CLAUDE.md) (que fija
 arquitectura): aquí está **el mapa concreto** de pantallas, navegación, componentes y lógica de
 dominio tras recrear el prototipo completo en Compose.
 
-> Estado: **maqueta de alta fidelidad con paridad total frente a los `.dc.html` de `reference/`**.
-> El **flujo de autenticación (correo + OTP) ya es real contra PocketBase** vía Ktor, con sesión
-> persistida en DataStore y gating de arranque. El resto de datos (movimientos, personas, ajustes,
-> historial) siguen siendo seed en memoria (`data/local/KuodraSeedSource`), pendientes de backend.
+> Estado: **maqueta de alta fidelidad con paridad total frente a los `.dc.html` de `reference/`**,
+> ya con el **flujo Personal funcional end-to-end**: autenticación (correo + OTP), movimientos,
+> categorías, presupuesto e historial de cortes sobre **Room (fuente de verdad offline) + sync con
+> PocketBase**, más escaneo de tickets y telemetría remota. Sesión persistida en DataStore y gating de
+> arranque. Los casos de uso **Gastos y Caja** siguen siendo seed en memoria
+> (`data/local/KuodraSeedSource`), pendientes de backend.
 
 ---
 
@@ -80,23 +82,32 @@ com.arenacun.kuodra
       MovementQuery.kt         # filter() + groupByDay() puros (búsqueda/filtros/agrupación)
       ScanTicketUseCase.kt     # orquestador: OCR → normalize → cadena [Mistral, Regex]
     repository/
-      AuthRepository, SpaceRepository, MovementRepository, SummaryRepository,
-      PreferencesRepository, SettingsRepository
+      AuthRepository, SpaceRepository, MovementRepository, CategoryRepository,
+      SummaryRepository, PreferencesRepository, SettingsRepository, SnapshotRepository
     telemetry/
       Telemetry.kt             # PUERTO NEUTRAL de observabilidad (breadcrumb/log/capture/setUser/flush)
                                #   + LogLevel + NoOpTelemetry. Impl detrás; swap a Sentry = otra impl
   data/
     local/
-      KuodraSeedSource          # seed in-memory: movimientos, personas, categorías, settings, historial
       KuodraDataStore           # extensión Context.kuodraDataStore (Preferences DataStore único)
       SessionStore              # persiste token + identidad de la sesión PocketBase
+      KuodraSeedSource          # seed in-memory — SOLO Gastos/Caja (aún sin backend); Personal ya no lo usa
+      db/                       # Room (fuente de verdad offline): KuodraDatabase (v7) + entities + DAOs + Converters
+                                #   MovementEntity/Dao, CategoryEntity/Dao, BudgetEntity/Dao,
+                                #   PeriodSnapshotEntity/Dao, TelemetryEventEntity/Dao
     remote/
-      PocketBaseClient          # HttpClient Ktor (OkHttp, JSON tolerante) + URLs de la colección users
+      PocketBaseClient          # HttpClient Ktor (OkHttp, JSON tolerante) + URLs de colecciones
       AuthApi / KtorAuthApi     # request-otp / auth-with-otp / records (alta) / auth-refresh
+      MovementApi, CategoryApi, BudgetApi, PeriodSnapshotApi  # list(since)/create/update por colección (interfaz + impl Ktor)
       TelemetryApi / KtorTelemetryApi  # POST a la colección telemetry_events (create rule autenticada)
       TicketAnalysisApi / KtorTicketAnalysisApi  # POST /api/kuodra/analyze-ticket (proxy Mistral, timeout 15s)
-      dto/AuthDtos, dto/TelemetryDtos  # DTOs @Serializable (auth; TelemetryRecord/BreadcrumbDto/EventDto)
-      dto/ScanDtos                     # TicketAnalysisRequest/Dto (respuesta versionada del proxy)
+      dto/AuthDtos, dto/SyncDtos, dto/TelemetryDtos, dto/ScanDtos  # DTOs @Serializable por área
+    sync/
+      SyncManager               # push filas dirty (create/update) + pull deltas (updated>cursor), LWW + tombstones
+      SyncCursorStore           # cursor por colección en DataStore
+      SyncTrigger / WorkManagerSyncTrigger + SyncWorker  # agendado con WorkManager (red requerida)
+    mapper/                     # DTO/Entity ↔ dominio: MovementMapper, CategoryMapper, BudgetMapper,
+                                #   SnapshotMapper, ScanMapper
     telemetry/                  # impl PocketBase del puerto Telemetry (ver "Observabilidad" abajo)
       PocketBaseTelemetry       # ring buffer de breadcrumbs + arma eventos → cola Room → TelemetryTrigger
       TelemetryUploader         # motor de entrega puro: drena spool, sube por lotes si hay sesión
@@ -106,7 +117,8 @@ com.arenacun.kuodra
     scan/
       MlKitOcrEngine            # impl del puerto OcrEngine (MLKit text-recognition BUNDLED, offline)
       MistralTicketParser       # eslabón remoto: proxy PocketBase→Mistral; cualquier fallo ⇒ null (cae a regex)
-    repository/                 # *RepositoryImpl (AuthRepositoryImpl real; Space/Preferences en DataStore)
+    repository/                 # *RepositoryImpl: Personal real (Room + sync) — Movement/Category/Budget/
+                                #   Snapshot/Settings; Auth real; Space/Preferences en DataStore; seed solo Gastos/Caja
   presentation/
     KuodraRoot.kt, navigation/ (Destinations, KuodraNavHost)
     crash/      CrashHandler (uncaught exceptions) + CrashActivity (pantalla de crash)
@@ -244,8 +256,17 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
   `template` sin romper clientes.
 
 ### Datos y "hoy"
-- El seed (`KuodraSeedSource`) ahora incluye `date: LocalDate` real en cada movimiento, los `SpaceSettings`
-  por caso de uso y el historial de cortes.
+- **Personal = Room + sync (fuente de verdad offline).** Los `*RepositoryImpl` leen/escriben Room
+  (`data/local/db`) filtrando por `owner`; las escrituras se marcan `dirty` y disparan el `SyncTrigger`.
+  `SyncManager` hace por colección **push** de `dirty` + **pull** de deltas (`updated > cursor`) con
+  **last-write-wins** y tombstones (`deleted`); no pisa filas con cambios locales pendientes ni las que
+  ya están en la versión remota (evita que un pull borre datos que el servidor ignoró). Cada colección
+  se sincroniza aislada. Esquema y reglas del servidor: [`POCKETBASE.md`](POCKETBASE.md).
+- **El seed (`KuodraSeedSource`) solo respalda Gastos y Caja** (movimientos, personas, ajustes,
+  historial) mientras no tengan backend. Personal ya no depende del seed.
+- **Lógica de negocio pura reutilizable** en `domain/usecase`: `BudgetPeriod` (ventana del periodo de
+  presupuesto) y `ClosePeriod` (arma el `PeriodSnapshot` del corte Personal). Patrón a repetir para la
+  liquidación de Gastos/Caja.
 - El "hoy" es la fecha real del sistema (`LocalDate.now()`), inyectable como parámetro en los ViewModels
   que lo usan para poder fijarlo en tests.
 
@@ -259,9 +280,12 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
 ./gradlew :app:installDebug           # instalar en dispositivo/emulador
 ```
 
-Para probar **auth end-to-end**: pon `pocketbase.url=...` en `local.properties` (no versionado) y
-ten la instancia PocketBase con `users` (OTP + Create rule pública + SMTP). El test
-`AuthRepositoryImplTest` cubre la orquestación (alta-si-falta, `otpId`, persistencia, signOut) sin red.
+Para probar **end-to-end** (auth + datos): pon `pocketbase.url=...` en `local.properties` (no versionado)
+y ten la instancia PocketBase con `users` (OTP + Create rule pública + SMTP) y las colecciones de datos
+(`movements`, `categories`, `budgets`, `period_snapshots`, `telemetry_events`) con sus reglas —todo en
+[`POCKETBASE.md`](POCKETBASE.md). El checklist de verificación (alta online, offline→reconexión,
+multi-dispositivo, reinstalar→pull completo) vive en ese archivo. Tests de host: `AuthRepositoryImplTest`
+(orquestación de auth sin red), `SyncManager`/`MovementRepositoryImpl` y ViewModels con repos *fake*.
 
 Pendiente recurrente: recorrido manual en emulador comparando 1:1 contra los `.dc.html` de
 `reference/` en tema claro y oscuro (los hex y medidas del handoff son la fuente de verdad).

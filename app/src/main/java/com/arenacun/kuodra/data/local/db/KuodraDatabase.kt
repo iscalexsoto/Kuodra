@@ -5,8 +5,10 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 
 /**
- * Base de datos local (fuente de verdad offline). Por ahora movimientos y categorías personales;
- * presupuestos e historial se añaden en Fase 3 subiendo la versión + migración.
+ * Base de datos local (fuente de verdad offline) del flujo Personal: movimientos, categorías,
+ * presupuesto e historial de cortes, más la cola durable de telemetría. Sin migraciones en
+ * pre-release: cualquier cambio de esquema sube [version] y recae en la migración destructiva
+ * (el sync repuebla desde PocketBase; ver `DataModule`).
  */
 @Database(
     entities = [

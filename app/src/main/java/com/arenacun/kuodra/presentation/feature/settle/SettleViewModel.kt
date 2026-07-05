@@ -16,6 +16,10 @@ import kotlinx.coroutines.launch
 /**
  * Liquidación (Gastos) / corte de caja (Caja) — `scrSettle`. Calcula los totales a partir de
  * las personas del [SummaryRepository] y emite [done] al registrar para volver al dashboard.
+ *
+ * **Personal no llega aquí:** cierra periodo desde el menú del dashboard (`ClosePeriodSheet` →
+ * `DashboardViewModel.onClosePeriodConfirm`), nunca por `Settle` (la tarjeta que navega a esta
+ * pantalla solo se muestra en Gastos/Caja).
  */
 class SettleViewModel(
     spaceRepository: SpaceRepository,
@@ -62,7 +66,7 @@ class SettleViewModel(
                     confirmLabel = "Registrar corte",
                 )
             }
-            UseCase.Personal -> SettleUiState(useCase = useCase)
+            UseCase.Personal -> error("Settle no aplica a Personal: cierra periodo desde el dashboard.")
         }
     }
 
