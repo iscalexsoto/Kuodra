@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,13 +32,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.R
 import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.BudgetFrequency
+import com.arenacun.kuodra.domain.model.Countries
 import com.arenacun.kuodra.domain.model.DateLabels
 import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SpaceSettings
@@ -636,7 +640,7 @@ private fun ContactSheet(c: KuodraColors, draft: ContactDraft, viewModel: Settin
             style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(bottom = 12.dp))
         SheetField(c, "NOMBRE", draft.name, "Nombre del contacto", viewModel::onContactName)
         Box(Modifier.height(10.dp))
-        SheetField(c, "WHATSAPP (OPCIONAL)", draft.whatsapp, "+52 …", viewModel::onContactWhatsapp)
+        PhoneField(c, draft, viewModel)
         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (draft.id != null) {
                 Box(
@@ -658,6 +662,69 @@ private fun ContactSheet(c: KuodraColors, draft: ContactDraft, viewModel: Settin
                     .clickable(onClick = viewModel::onSaveContact).padding(vertical = 15.dp),
                 contentAlignment = Alignment.Center,
             ) { Text("Guardar", style = Kuodra.type.heading, color = c.primaryInk) }
+        }
+    }
+}
+
+/** Campo de teléfono: chip de país (bandera + código, abre el selector) + número local. */
+@Composable
+private fun PhoneField(c: KuodraColors, draft: ContactDraft, viewModel: SettingsViewModel) {
+    val country = Countries.byDialCode(draft.dialCode)
+    Column(Modifier.fillMaxWidth()) {
+        Text("WHATSAPP (OPCIONAL)", style = Kuodra.type.overline, color = c.ink3,
+            modifier = Modifier.padding(bottom = 6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.clip(Kuodra.shape.lg).background(c.surface2).border(1.dp, c.line, Kuodra.shape.lg)
+                    .clickable(onClick = viewModel::onOpenCountryPicker).padding(horizontal = 12.dp, vertical = 13.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(country.flag, style = Kuodra.type.body)
+                Text(country.dialCode, style = Kuodra.type.body, color = c.ink)
+                Chevron(7.dp, c.ink3, degrees = 90f)
+            }
+            Box(
+                Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.surface2)
+                    .border(1.dp, c.line, Kuodra.shape.lg).padding(horizontal = 14.dp, vertical = 13.dp),
+            ) {
+                BasicTextField(
+                    value = draft.whatsapp,
+                    onValueChange = viewModel::onContactWhatsapp,
+                    singleLine = true,
+                    textStyle = Kuodra.type.body.copy(color = c.ink),
+                    cursorBrush = SolidColor(c.primary),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth(),
+                    decorationBox = { inner ->
+                        if (draft.whatsapp.isEmpty()) Text("Número", style = Kuodra.type.body, color = c.ink3)
+                        inner()
+                    },
+                )
+            }
+        }
+    }
+
+    if (draft.countryPickerOpen) {
+        Dialog(onDismissRequest = viewModel::onCloseCountryPicker) {
+            Column(
+                Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface).padding(vertical = 12.dp),
+            ) {
+                Text("Código de país", style = Kuodra.type.heading, color = c.ink,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
+                Countries.ALL.forEach { country ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { viewModel.onPickCountry(country.dialCode) }
+                            .padding(horizontal = 18.dp, vertical = 13.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(country.flag, style = Kuodra.type.body)
+                        Text(country.name, style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
+                        Text(country.dialCode, style = Kuodra.type.body, color = c.ink3)
+                    }
+                }
+            }
         }
     }
 }

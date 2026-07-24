@@ -29,11 +29,19 @@ class SettlementRepositoryImpl(
             else dao.observe(session.userId, spaceId).map { rows -> rows.map { it.toDomain() } }
         }
 
-    override suspend fun close(settlement: Settlement, movementIds: List<String>) {
+    override suspend fun close(settlement: Settlement, movementIds: List<String>, paymentIds: List<String>) {
         val owner = sessionStore.userId() ?: return
         val now = System.currentTimeMillis()
         dao.upsert(settlement.toEntity(owner, now, dirty = true))
         if (movementIds.isNotEmpty()) movementDao.stampSettlement(movementIds, settlement.id, now)
+        if (paymentIds.isNotEmpty()) dao.stampSettledBy(paymentIds, settlement.id, now)
+        syncTrigger.requestSync()
+    }
+
+    override suspend fun record(payment: Settlement) {
+        val owner = sessionStore.userId() ?: return
+        val now = System.currentTimeMillis()
+        dao.upsert(payment.toEntity(owner, now, dirty = true))
         syncTrigger.requestSync()
     }
 }

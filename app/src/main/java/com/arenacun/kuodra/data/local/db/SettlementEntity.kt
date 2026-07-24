@@ -25,6 +25,10 @@ data class SettlementEntity(
     /** `[{fromId, toId, amount}]` sugeridas. */
     val transfersJson: String = "[]",
     val createdAt: Long,
+    /** "Corte" | "Payment" (pago individual). */
+    val kind: String = "Corte",
+    /** Solo pagos: id del corte que lo consumió; "" = vivo. */
+    val settledBy: String = "",
     val updatedAt: Long,
     val deleted: Boolean,
     val dirty: Boolean,
@@ -52,4 +56,8 @@ interface SettlementDao {
 
     @Query("UPDATE settlements SET deleted = 1, dirty = 1, updatedAt = :updatedAt WHERE id = :id")
     suspend fun softDelete(id: String, updatedAt: Long)
+
+    /** Marca los pagos indicados como consumidos por un corte (salen de los balances vivos) + dirty. */
+    @Query("UPDATE settlements SET settledBy = :corteId, dirty = 1, updatedAt = :updatedAt WHERE id IN (:ids)")
+    suspend fun stampSettledBy(ids: List<String>, corteId: String, updatedAt: Long)
 }

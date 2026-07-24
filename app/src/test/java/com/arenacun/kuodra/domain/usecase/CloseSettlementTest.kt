@@ -54,6 +54,20 @@ class CloseSettlementTest {
     }
 
     @Test
+    fun `live payments are folded into the frozen balances and returned to consume`() {
+        val movements = listOf(expense("m1", "s1", 1000)) // yo +500, Andrea −500
+        // Andrea ya te pagó 500 (pago vivo): balances quedan a cero.
+        val payment = RecordPayment.build("s1", "a", "Andrea", Money(500), currentNet = -500, today = today)
+        val result = CloseSettlement.build("s1", "Casa Roma", movements, persons, today, listOf(payment))
+
+        assertEquals(listOf("m1"), result.movementIds)
+        assertEquals(listOf(payment.id), result.paymentIds)
+        // Todo saldado ⇒ sin líneas ni transferencias.
+        assertTrue(result.settlement.lines.isEmpty())
+        assertTrue(result.settlement.transfers.isEmpty())
+    }
+
+    @Test
     fun `deleted person keeps a placeholder name in the frozen line`() {
         val movements = listOf(expense("m1", "s1", 1000))
         val result = CloseSettlement.build("s1", "Casa Roma", movements, emptyMap(), today)

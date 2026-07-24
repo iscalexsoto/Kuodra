@@ -24,6 +24,7 @@ import com.arenacun.kuodra.presentation.feature.dashboard.DashboardScreen
 import com.arenacun.kuodra.presentation.feature.history.HistoryDetailScreen
 import com.arenacun.kuodra.presentation.feature.history.HistoryScreen
 import com.arenacun.kuodra.presentation.feature.movement.AddMovementScreen
+import com.arenacun.kuodra.presentation.feature.movement.DetailScreen
 import com.arenacun.kuodra.presentation.feature.movement.AddMovementViewModel
 import com.arenacun.kuodra.presentation.feature.movement.MovementDetailScreen
 import com.arenacun.kuodra.presentation.feature.movement.SplitConfigScreen
@@ -214,11 +215,18 @@ fun KuodraNavHost(
                     onBack = { navController.popBackStack() },
                     onSaved = { navController.popBackStack() },
                     onOpenSplit = { navController.navigate(Destination.SplitConfig) },
+                    onOpenDetail = { navController.navigate(Destination.DetailConfig) },
                     viewModel = entry.sharedAddMovementViewModel(navController, args.editId),
                 )
             }
             composable<Destination.SplitConfig> { entry ->
                 SplitConfigScreen(
+                    onBack = { navController.popBackStack() },
+                    viewModel = entry.sharedAddMovementViewModel(navController, null),
+                )
+            }
+            composable<Destination.DetailConfig> { entry ->
+                DetailScreen(
                     onBack = { navController.popBackStack() },
                     viewModel = entry.sharedAddMovementViewModel(navController, null),
                 )

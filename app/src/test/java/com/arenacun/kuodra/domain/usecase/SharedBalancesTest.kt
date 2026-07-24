@@ -75,6 +75,36 @@ class SharedBalancesTest {
     }
 
     @Test
+    fun `a live payment offsets the person and me`() {
+        // Yo pago 900 dividido con "a" (450/450): yo +450, a −450.
+        val movement = expense(
+            "m1", 900,
+            payers = listOf(PayerShare(PersonRef.ME, Money(900))),
+            splits = listOf(SplitShare(PersonRef.ME, Money(450)), SplitShare("a", Money(450))),
+        )
+        // "a" te paga 450 (Transfer a → Tú): ambos a cero.
+        val payment = RecordPayment.build("s1", "a", "Andrea", Money(450), currentNet = -450, today = java.time.LocalDate.now())
+        val balances = SharedBalances.compute(listOf(movement), listOf(payment))
+        assertEquals(null, balances["a"])
+        assertEquals(null, balances[PersonRef.ME])
+    }
+
+    @Test
+    fun `a consumed payment (settledBy set) no longer affects balances`() {
+        val movement = expense(
+            "m1", 900,
+            payers = listOf(PayerShare(PersonRef.ME, Money(900))),
+            splits = listOf(SplitShare(PersonRef.ME, Money(450)), SplitShare("a", Money(450))),
+        )
+        val consumed = RecordPayment.build("s1", "a", "Andrea", Money(450), currentNet = -450, today = java.time.LocalDate.now())
+            .copy(settledBy = "corte1")
+        val balances = SharedBalances.compute(listOf(movement), listOf(consumed))
+        // El pago consumido se ignora: saldos originales.
+        assertEquals(450L, balances[PersonRef.ME])
+        assertEquals(-450L, balances["a"])
+    }
+
+    @Test
     fun `settled movements are ignored`() {
         val live = expense(
             "m1", 900,

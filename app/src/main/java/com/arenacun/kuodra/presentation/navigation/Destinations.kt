@@ -33,6 +33,7 @@ sealed interface Destination {
     @Serializable data class AddMovement(val editId: String? = null) : Destination
     /** Pagadores + división de un gasto compartido (dentro del AddGraph; comparte el AddMovementViewModel). */
     @Serializable data object SplitConfig : Destination
+    @Serializable data object DetailConfig : Destination
     @Serializable data class ScanTicket(val source: ScanSource) : Destination
     @Serializable data object AllMovements : Destination
     @Serializable data object Settings : Destination

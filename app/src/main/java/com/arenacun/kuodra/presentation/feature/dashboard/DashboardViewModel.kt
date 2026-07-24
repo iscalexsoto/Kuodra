@@ -13,6 +13,8 @@ import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.PersonRef
 import com.arenacun.kuodra.domain.model.ReturnStatus
+import com.arenacun.kuodra.domain.model.Settlement
+import com.arenacun.kuodra.domain.model.SettlementKind
 import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.UseCase
@@ -20,10 +22,12 @@ import com.arenacun.kuodra.domain.model.initialsOf
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.domain.model.total
 import com.arenacun.kuodra.domain.usecase.SettleSuggestions
+import com.arenacun.kuodra.domain.usecase.ShareSummary
 import com.arenacun.kuodra.domain.usecase.SharedBalances
 import com.arenacun.kuodra.domain.repository.MovementRepository
 import com.arenacun.kuodra.domain.repository.PersonRepository
 import com.arenacun.kuodra.domain.repository.SettingsRepository
+import com.arenacun.kuodra.domain.repository.SettlementRepository
 import com.arenacun.kuodra.domain.repository.SnapshotRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
@@ -32,12 +36,14 @@ import com.arenacun.kuodra.domain.usecase.ClosePeriod
 import com.arenacun.kuodra.domain.usecase.ReturnCalc
 import com.arenacun.kuodra.presentation.feature.movement.toUi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -53,6 +59,7 @@ class DashboardViewModel(
     private val settingsRepository: SettingsRepository,
     private val snapshotRepository: SnapshotRepository,
     private val personRepository: PersonRepository,
+    private val settlementRepository: SettlementRepository,
 ) : ViewModel() {
 
     private val today: LocalDate = LocalDate.now()
@@ -67,19 +74,23 @@ class DashboardViewModel(
                 movementRepository.movements(space.id),
                 settingsRepository.settings(),
                 personRepository.persons(space.id),
-            ) { movements, settings, people ->
+                settlementRepository.settlements(space.id),
+            ) { movements, settings, people, settlements ->
                 val categories = summaryRepository.categories().associateBy { it.id }
                 val percent = settings.budget?.returnPercent ?: ReturnCalc.DEFAULT_RETURN_PERCENT
                 val persons = people.associate { it.id to it.name }
                 val gastos = space.useCase == UseCase.Gastos
+                val payments = livePayments(settlements)
                 DashboardUiState(
                     space = space,
                     movements = movements.map { it.toUi(categories, space.useCase, today, percent, persons) },
-                    people = if (gastos) peopleBalances(movements, people) else emptyList(),
+                    people = if (gastos) peopleBalances(movements, payments, people) else emptyList(),
                     categories = breakdown(movements, categories),
                     personalHero = if (space.useCase == UseCase.Personal) personalHero(movements, settings) else null,
-                    gastosHero = if (gastos) gastosHero(movements) else null,
+                    gastosHero = if (gastos) gastosHero(movements, payments) else null,
                     pendingReturns = if (space.useCase == UseCase.Personal) pendingReturns(movements, percent) else null,
+                    membersLabel = if (gastos) membersLabel(people) else null,
+                    hasUnsettledBalances = gastos && SharedBalances.compute(movements, payments).isNotEmpty(),
                 )
             }
         }
@@ -95,9 +106,22 @@ class DashboardViewModel(
     fun onOpenAddOptions() = menu.update { it.copy(sheet = DashboardSheet.AddOptions) }
     fun onCloseSheet() = menu.update { it.copy(sheet = DashboardSheet.None) }
 
-    // ---- Compartir resumen/corte (Gastos/Caja) ----
-    fun onShare() = menu.update { it.copy(sheet = DashboardSheet.Share) }
-    fun onShareConfirm() = menu.update { it.copy(sheet = DashboardSheet.Shared) }
+    // ---- Compartir resumen (Gastos) ----
+    /** Texto de resumen listo para el share nativo (lo construye el VM; lo lanza la pantalla). */
+    private val _share = Channel<String>(Channel.BUFFERED)
+    val share = _share.receiveAsFlow()
+
+    /** Arma el resumen del grupo con los saldos vivos y lo emite para compartir; cierra el menú. */
+    fun onShare() {
+        viewModelScope.launch {
+            val space = spaceRepository.activeSpace.value
+            val movements = movementRepository.movements(space.id).first()
+            val contacts = personRepository.persons(space.id).first().associateBy { it.id }
+            val payments = livePayments(settlementRepository.settlements(space.id).first())
+            _share.send(ShareSummary.build(space.displayName, movements, contacts, payments))
+            menu.update { it.copy(sheet = DashboardSheet.None) }
+        }
+    }
 
     // ---- Cerrar periodo (Personal) ----
     fun onClosePeriod() = menu.update { it.copy(sheet = DashboardSheet.PCloseConfirm) }
@@ -139,8 +163,12 @@ class DashboardViewModel(
      * Personas del dashboard Gastos con su saldo (desde los movimientos vivos). Neto de una persona
      * < 0 ⇒ debe al grupo ("te debe" desde tu vista); > 0 ⇒ el grupo le debe ("le debes").
      */
-    private fun peopleBalances(movements: List<Movement>, contacts: List<SpacePerson>): List<Person> {
-        val balances = SharedBalances.compute(movements)
+    private fun peopleBalances(
+        movements: List<Movement>,
+        payments: List<Settlement>,
+        contacts: List<SpacePerson>,
+    ): List<Person> {
+        val balances = SharedBalances.compute(movements, payments)
         val byId = contacts.associateBy { it.id }
         return balances.filterKeys { it != PersonRef.ME }
             .entries.sortedByDescending { -it.value } // más deudores primero
@@ -158,9 +186,13 @@ class DashboardViewModel(
             }
     }
 
+    /** Pagos individuales vivos (kind=Payment, no consumidos por un corte). */
+    private fun livePayments(settlements: List<Settlement>): List<Settlement> =
+        settlements.filter { it.kind == SettlementKind.Payment && it.settledBy.isEmpty() }
+
     /** Hero Gastos: tu saldo neto + totales que te deben / debes (desde las transferencias sugeridas). */
-    private fun gastosHero(movements: List<Movement>): GastosHero {
-        val balances = SharedBalances.compute(movements)
+    private fun gastosHero(movements: List<Movement>, payments: List<Settlement>): GastosHero {
+        val balances = SharedBalances.compute(movements, payments)
         val transfers = SettleSuggestions.compute(balances)
         val owed = transfers.filter { it.toId == PersonRef.ME }.sumOf { it.amount.cents }
         val owe = transfers.filter { it.fromId == PersonRef.ME }.sumOf { it.amount.cents }
@@ -201,24 +233,11 @@ class DashboardViewModel(
         viewModelScope.launch { spaceRepository.unarchive(id) }
     }
 
-    // ---- Salir / archivar grupo ----
-    fun onLeaveStart() = menu.update { it.copy(sheet = DashboardSheet.None, leaveStep = LeaveStep.Settle) }
-    fun onLeaveAdvance() {
-        val step = menu.value.leaveStep
-        if (step == LeaveStep.Confirm) {
-            // Confirmar archiva el espacio activo (vuelve a Personal por construcción).
-            val id = spaceRepository.activeSpace.value.id
-            if (id.isNotEmpty()) viewModelScope.launch { spaceRepository.archive(id) }
-        }
-        menu.update {
-            it.copy(leaveStep = when (it.leaveStep) {
-                LeaveStep.Settle -> LeaveStep.Confirm
-                LeaveStep.Confirm -> LeaveStep.Done
-                else -> it.leaveStep
-            })
-        }
+    /** Subtítulo de miembros del encabezado (Gastos): "Tú" + contactos. */
+    private fun membersLabel(contacts: List<SpacePerson>): String {
+        val count = contacts.size + 1 // incluye "Tú"
+        return if (count <= 1) "Solo tú" else "$count miembros"
     }
-    fun onLeaveClose() = menu.update { it.copy(leaveStep = LeaveStep.None) }
 
     /** Hero Personal: con presupuesto activo muestra progreso del periodo; si no, total del mes. */
     private fun personalHero(movements: List<Movement>, settings: SpaceSettings): PersonalHero {

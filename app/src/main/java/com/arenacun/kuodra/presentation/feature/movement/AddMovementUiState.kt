@@ -15,8 +15,17 @@ import com.arenacun.kuodra.domain.scan.ScanSource
 import com.arenacun.kuodra.presentation.component.CategoryDraft
 import java.time.LocalDate
 
-/** Hoja inferior abierta en el alta (categoría / detalle). Pagador y división viven en pantalla propia. */
-enum class AddSheet { Category, Detail }
+/** Hoja inferior abierta en el alta (categoría). Detalle, pagador y división viven en pantalla propia. */
+enum class AddSheet { Category }
+
+/** Tipo de monto que se edita en el number pad de la pantalla de división. */
+enum class SplitPadKind { PayerAmount, SplitAmount, SplitPercent }
+
+/** Campo concreto (tipo + persona) que se edita en el number pad de división (null = ninguno). */
+data class SplitPadTarget(val kind: SplitPadKind, val personId: String)
+
+/** Hoja inferior de selección en la pantalla de división: elegir pagadores / participantes. */
+enum class SplitSheet { AddPayer, AddParticipant }
 
 /**
  * Estado del formulario de alta de movimiento. Inmutable y expuesto por [AddMovementViewModel]; los
@@ -45,6 +54,12 @@ data class AddMovementUiState(
     val amountDraft: Map<String, Long> = emptyMap(),
     /** Porcentajes por persona (modo Percent). */
     val percentDraft: Map<String, Int> = emptyMap(),
+    /** Campo de monto/porcentaje que se edita con el number pad en la pantalla de división. */
+    val splitPadTarget: SplitPadTarget? = null,
+    /** Estado de trabajo del number pad de división mientras el diálogo está abierto. */
+    val splitPad: CalcState = CalcState(),
+    /** Hoja de selección abierta en la pantalla de división (null = ninguna). */
+    val splitSheet: SplitSheet? = null,
     val sheet: AddSheet? = null,
     /** Borrador de nueva categoría dentro del selector (null = no se está creando). */
     val editingCategory: CategoryDraft? = null,

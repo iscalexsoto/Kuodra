@@ -1,6 +1,7 @@
 package com.arenacun.kuodra.presentation.feature.movement
 
 import com.arenacun.kuodra.MainDispatcherRule
+import com.arenacun.kuodra.domain.model.CalcKey
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
@@ -308,7 +309,9 @@ class AddMovementViewModelTest {
         val vm = gastosViewModel(repository)
         advanceUntilIdle()
         vm.applyScan(scan(total = Money(100000))) // $1000
-        // Por defecto: "Tú" paga todo y la división es equitativa entre los 3 miembros.
+        // Con más de 2 miembros solo participa "Tú" por defecto; añadimos a los otros dos.
+        vm.onToggleSplitMember("a")
+        vm.onToggleSplitMember("b")
         vm.onSave()
         advanceUntilIdle()
 
@@ -326,8 +329,8 @@ class AddMovementViewModelTest {
         advanceUntilIdle()
         vm.applyScan(scan(total = Money(30000))) // $300
         vm.onSetSplitMode(com.arenacun.kuodra.domain.model.SplitMode.Percent)
-        // Solo Tú y Andrea, 50/50.
-        vm.onToggleSplitMember("b")
+        // Solo Tú y Andrea, 50/50 (por defecto solo está Tú; añadimos a Andrea).
+        vm.onToggleSplitMember("a")
         vm.onSetSplitPercent(com.arenacun.kuodra.domain.model.PersonRef.ME, 50)
         vm.onSetSplitPercent("a", 50)
         assertNull(vm.splitError(vm.uiState.value))
@@ -353,6 +356,44 @@ class AddMovementViewModelTest {
         assertNull(vm.payersError(vm.uiState.value))
     }
 
+    @Test
+    fun `adding a payer auto-includes them as a split participant`() = runTest {
+        val vm = gastosViewModel(FakeMovementRepository())
+        advanceUntilIdle()
+        // Por defecto (más de 2 miembros) solo participa "Tú".
+        assertFalse("a" in vm.uiState.value.splitIds)
+        vm.onTogglePayer("a")
+        assertTrue("a" in vm.uiState.value.splitIds)
+        // Quitarlo como pagador no lo saca de la división.
+        vm.onTogglePayer("a")
+        assertTrue("a" in vm.uiState.value.splitIds)
+    }
+
+    @Test
+    fun `split amount pad writes exact cents to the person`() = runTest {
+        val vm = gastosViewModel(FakeMovementRepository())
+        advanceUntilIdle()
+        vm.onOpenSplitPad(SplitPadTarget(SplitPadKind.SplitAmount, "a"))
+        vm.onSplitPadKey(CalcKey.N2)
+        vm.onSplitPadKey(CalcKey.N5)
+        vm.onSplitPadKey(CalcKey.N0)
+        vm.onConfirmSplitPad()
+        assertEquals(25000L, vm.uiState.value.amountDraft["a"])
+        assertNull(vm.uiState.value.splitPadTarget)
+    }
+
+    @Test
+    fun `split percent pad clamps to one hundred`() = runTest {
+        val vm = gastosViewModel(FakeMovementRepository())
+        advanceUntilIdle()
+        vm.onOpenSplitPad(SplitPadTarget(SplitPadKind.SplitPercent, "a"))
+        vm.onSplitPadKey(CalcKey.N9)
+        vm.onSplitPadKey(CalcKey.N9)
+        vm.onSplitPadKey(CalcKey.N9)
+        vm.onConfirmSplitPad()
+        assertEquals(100, vm.uiState.value.percentDraft["a"])
+    }
+
     // ---- Gasto Personal derivado ----
 
     @Test
@@ -361,6 +402,9 @@ class AddMovementViewModelTest {
         val vm = gastosViewModel(repository)
         advanceUntilIdle()
         vm.applyScan(scan(total = Money(90000))) // $900, equitativo entre 3 ⇒ tu parte $300
+        // Con más de 2 miembros solo participa "Tú" por defecto; añadimos a los otros dos.
+        vm.onToggleSplitMember("a")
+        vm.onToggleSplitMember("b")
 
         val results = mutableListOf<SaveResult>()
         val job = launch { vm.saved.collect { results += it } }

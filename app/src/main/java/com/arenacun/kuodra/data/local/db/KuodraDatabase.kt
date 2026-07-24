@@ -24,7 +24,9 @@ import androidx.room.TypeConverters
     // v10: Gastos compartidos por id — se retiran las columnas legacy `payer`/`splitNames` de
     // `movements` (la UI ya usa `payers`/`splits` por id). El bump fuerza la migración destructiva
     // ya configurada; el sync repuebla los datos desde PocketBase tras limpiar cursores.
-    version = 10,
+    // v11: liquidación parcial — `settlements` gana `kind` (Corte/Payment) y `settledBy` (pagos
+    // consumidos por un corte). Bump destructivo; el sync repuebla.
+    version = 11,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)

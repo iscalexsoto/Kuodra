@@ -72,8 +72,12 @@ class AddMovementViewModel(
                 val members = listOf(SpacePerson(PersonRef.ME, "Tú")) + people
                 _uiState.update { st ->
                     val ids = members.map { it.id }.toSet()
-                    // Sin selección aún (alta nueva) ⇒ todos participan; si ya hay, conserva los válidos.
-                    val split = if (st.splitIds.isEmpty()) ids else st.splitIds.filter { it in ids }.toSet()
+                    // Sin selección aún (alta nueva): con pocos miembros (≤2) participan todos por
+                    // comodidad; con más, solo "Tú" y el usuario elige a quién añadir (así el
+                    // "equitativo" es realmente entre los que participaron). Si ya hay selección
+                    // (p. ej. edición precargada), se conservan los válidos.
+                    val default = if (members.size > 2) setOf(PersonRef.ME) else ids
+                    val split = if (st.splitIds.isEmpty()) default else st.splitIds.filter { it in ids }.toSet()
                     st.copy(members = members, splitIds = split)
                 }
             }
@@ -173,10 +177,14 @@ class AddMovementViewModel(
 
     // ---- Pantalla de división (pagadores + reparto) ----
     fun onTogglePayer(id: String) = _uiState.update { st ->
-        val payers = if (st.payers.any { it.personId == id })
+        val isPayer = st.payers.any { it.personId == id }
+        val payers = if (isPayer)
             st.payers.filterNot { it.personId == id }
         else st.payers + PayerShare(id, Money.Zero)
-        st.copy(payers = payers)
+        // Al añadir un pagador, se auto-incluye como participante de la división (removible
+        // aparte). Al quitarlo como pagador, su participación en el reparto se deja intacta.
+        val splitIds = if (isPayer) st.splitIds else st.splitIds + id
+        st.copy(payers = payers, splitIds = splitIds)
     }
     fun onSetPayerAmount(id: String, cents: Long) = _uiState.update { st ->
         st.copy(payers = st.payers.map { if (it.personId == id) it.copy(amount = Money(cents)) else it })
@@ -193,6 +201,37 @@ class AddMovementViewModel(
         st.copy(percentDraft = st.percentDraft + (id to percent.coerceIn(0, 100)))
     }
 
+    // ---- Number pad de la pantalla de división (monto pagador / monto split / porcentaje) ----
+    /** Abre el number pad para el campo indicado, precargando su valor actual. */
+    fun onOpenSplitPad(target: SplitPadTarget) = _uiState.update { st ->
+        val current = when (target.kind) {
+            SplitPadKind.PayerAmount -> (st.payers.firstOrNull { it.personId == target.personId }?.amount?.cents ?: 0L) / 100.0
+            SplitPadKind.SplitAmount -> (st.amountDraft[target.personId] ?: 0L) / 100.0
+            SplitPadKind.SplitPercent -> (st.percentDraft[target.personId] ?: 0).toDouble()
+        }
+        st.copy(splitPadTarget = target, splitPad = Calc.initial(current))
+    }
+    fun onSplitPadKey(key: CalcKey) = _uiState.update { it.copy(splitPad = Calc.press(it.splitPad, key)) }
+    fun onDismissSplitPad() = _uiState.update { it.copy(splitPadTarget = null) }
+    fun onConfirmSplitPad() = _uiState.update { st ->
+        val target = st.splitPadTarget ?: return@update st.copy(splitPadTarget = null)
+        val result = st.splitPad.result ?: 0.0
+        val id = target.personId
+        val next = when (target.kind) {
+            SplitPadKind.PayerAmount ->
+                st.copy(payers = st.payers.map { if (it.personId == id) it.copy(amount = Money.ofMajor(result)) else it })
+            SplitPadKind.SplitAmount ->
+                st.copy(amountDraft = st.amountDraft + (id to Money.ofMajor(result).cents))
+            SplitPadKind.SplitPercent ->
+                st.copy(percentDraft = st.percentDraft + (id to result.toInt().coerceIn(0, 100)))
+        }
+        next.copy(splitPadTarget = null)
+    }
+
+    // ---- Hojas de selección de la pantalla de división ----
+    fun onOpenSplitSheet(sheet: SplitSheet) = _uiState.update { it.copy(splitSheet = sheet) }
+    fun onCloseSplitSheet() = _uiState.update { it.copy(splitSheet = null) }
+
     // ---- Sheets ----
     fun onOpenSheet(sheet: AddSheet) = _uiState.update { it.copy(sheet = sheet) }
     fun onCloseSheet() = _uiState.update { st ->
@@ -202,6 +241,12 @@ class AddMovementViewModel(
     }
     fun onPickCategory(category: Category) =
         _uiState.update { it.copy(category = category, sheet = null) }
+
+    // ---- Detalle (partidas): pantalla propia ----
+    /** Al salir de la pantalla de detalle, descarta las partidas totalmente vacías (como onCloseSheet). */
+    fun onCloseDetail() = _uiState.update { st ->
+        st.copy(items = st.items.filter { it.amount.cents != 0L || it.concept.isNotBlank() })
+    }
 
     // ---- Detalle (partidas) ----
     fun onAddItem() = _uiState.update { st ->

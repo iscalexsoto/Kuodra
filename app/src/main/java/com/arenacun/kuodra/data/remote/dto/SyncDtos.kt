@@ -176,6 +176,8 @@ data class SettlementDto(
     val lines: List<SettlementLineDto> = emptyList(),
     val transfers: List<TransferDto> = emptyList(),
     val createdAt: Long = 0,
+    val kind: String = "Corte",
+    val settledBy: String = "",
     val deleted: Boolean = false,
     val updated: String = "",
 )

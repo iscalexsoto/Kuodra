@@ -17,6 +17,10 @@ data class DashboardUiState(
     val gastosHero: GastosHero? = null,
     /** Total "por cobrar" de todos los movimientos por devolver (Personal). Null si no hay ninguno. */
     val pendingReturns: PendingReturnsUi? = null,
+    /** Subtítulo de miembros del encabezado (Gastos): "Solo tú" / "N miembros". Null en Personal. */
+    val membersLabel: String? = null,
+    /** Gastos: hay saldos vivos sin liquidar (para el banner de recordatorio). */
+    val hasUnsettledBalances: Boolean = false,
 ) {
     val useCase: UseCase get() = space.useCase
 }
@@ -68,25 +72,20 @@ data class CategoryBreakdown(
     val tone: AvatarTone,
 )
 
-/** Paso del flujo de salir/archivar grupo (`leaveOpen` del prototipo). */
-enum class LeaveStep { None, Settle, Confirm, Done }
-
 /**
  * Hoja inferior abierta en el dashboard:
  * - [Spaces] selector "Tus espacios" (al tocar el título).
  * - [Menu] menú de acciones del espacio actual (botón ···).
- * - [Share] opciones de compartir resumen (PDF/WhatsApp); [Shared] confirmación.
  * - [PCloseConfirm] confirmación de cerrar periodo (Personal); [PClosed] éxito.
  * - [ReturnAllConfirm] confirmación de marcar todo como devuelto (Personal); [ReturnAllDone] éxito.
  * - [AddOptions] las 3 vías de alta al tocar el FAB "Agregar" (escanear/galería/manual).
  */
 enum class DashboardSheet {
-    None, Spaces, Menu, Share, Shared, PCloseConfirm, PClosed,
+    None, Spaces, Menu, PCloseConfirm, PClosed,
     ReturnAllConfirm, ReturnAllDone, AddOptions,
 }
 
-/** Estado de los overlays del dashboard: hoja inferior activa y flujo de archivar. */
+/** Estado de los overlays del dashboard: hoja inferior activa. */
 data class DashboardOverlay(
     val sheet: DashboardSheet = DashboardSheet.None,
-    val leaveStep: LeaveStep = LeaveStep.None,
 )

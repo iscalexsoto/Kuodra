@@ -31,8 +31,8 @@ fun terminologyFor(useCase: UseCase): Terminology = when (useCase) {
         paidLabel = "", saveNoun = "gasto", settleTitle = "",
     )
     UseCase.Gastos -> Terminology(
-        groupName = "Casa Roma", containerKind = "Grupo", roleLabel = "4 miembros",
+        groupName = "Casa Roma", containerKind = "Grupo", roleLabel = "miembros",
         heroLabel = "Tu balance del mes", addTitle = "Nuevo gasto",
-        paidLabel = "¿Quién pagó?", saveNoun = "gasto", settleTitle = "Liquidación de junio",
+        paidLabel = "¿Quién pagó?", saveNoun = "gasto", settleTitle = "Liquidación del grupo",
     )
 }

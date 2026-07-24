@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.BudgetFrequency
+import com.arenacun.kuodra.domain.model.Countries
 import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.CalcKey
 import com.arenacun.kuodra.domain.model.CalcState
@@ -189,19 +190,31 @@ class SettingsViewModel(
     // ---- Contactos (Gastos) ----
     fun onAddContact() = local.update { it.copy(editingContact = ContactDraft(null, "", "")) }
     fun onEditContact(person: SpacePerson) = local.update {
-        it.copy(editingContact = ContactDraft(person.id, person.name, person.phone))
+        // Separa el teléfono guardado en (código de país, número local) para pre-poblar el selector.
+        val (dialCode, localNumber) = Countries.split(person.phone)
+        it.copy(editingContact = ContactDraft(person.id, person.name, localNumber, dialCode))
     }
     fun onContactName(v: String) = local.update { it.copy(editingContact = it.editingContact?.copy(name = v)) }
-    fun onContactWhatsapp(v: String) = local.update { it.copy(editingContact = it.editingContact?.copy(whatsapp = v)) }
+    fun onContactWhatsapp(v: String) = local.update {
+        // Solo dígitos en el número local (el código va aparte).
+        it.copy(editingContact = it.editingContact?.copy(whatsapp = v.filter { ch -> ch.isDigit() }))
+    }
+    fun onOpenCountryPicker() = local.update { it.copy(editingContact = it.editingContact?.copy(countryPickerOpen = true)) }
+    fun onPickCountry(dialCode: String) = local.update {
+        it.copy(editingContact = it.editingContact?.copy(dialCode = dialCode, countryPickerOpen = false))
+    }
+    fun onCloseCountryPicker() = local.update { it.copy(editingContact = it.editingContact?.copy(countryPickerOpen = false)) }
     fun onCloseContact() = local.update { it.copy(editingContact = null) }
 
     fun onSaveContact() {
         val draft = local.value.editingContact ?: return
         if (draft.name.isBlank()) return
+        val localNumber = draft.whatsapp.filter { it.isDigit() }
         val person = SpacePerson(
             id = draft.id ?: newId(),
             name = draft.name.trim(),
-            phone = draft.whatsapp.trim(),
+            // Guardado con el código de país incluido (formato que espera `wa.me`).
+            phone = if (localNumber.isBlank()) "" else draft.dialCode + localNumber,
         )
         viewModelScope.launch {
             if (draft.id == null) personRepository.add(spaceId, person)

@@ -12,16 +12,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.SettlementRecord
 import com.arenacun.kuodra.presentation.component.BackCircle
@@ -40,6 +43,22 @@ fun HistoryDetailScreen(
     val c = Kuodra.colors
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val record = state.record
+    val context = LocalContext.current
+
+    LaunchedEffect(Unit) {
+        viewModel.whatsapp.collect { url ->
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
+        }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.share.collect { text ->
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            runCatching { context.startActivity(Intent.createChooser(send, null)) }
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().background(c.screenBg).verticalScroll(rememberScrollState())
@@ -97,55 +116,53 @@ fun HistoryDetailScreen(
             Modifier.fillMaxWidth().clip(Kuodra.shape.lg).background(c.surface).border(1.5.dp, c.line, Kuodra.shape.lg)
                 .clickable { viewModel.onReshare() }.padding(vertical = 16.dp),
             contentAlignment = Alignment.Center,
-        ) { Text("Reenviar corte", style = Kuodra.type.heading, color = c.ink) }
+        ) { Text("Reenviar", style = Kuodra.type.heading, color = c.ink) }
     }
 
     when (state.sheet) {
         ReshareSheet.Options -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            ReshareOptions(c, viewModel)
-        }
-        ReshareSheet.Shared -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            SharedConfirmation(c, viewModel)
+            ReshareOptions(c, state.reshareRows, viewModel)
         }
         ReshareSheet.None -> {}
     }
 }
 
 @Composable
-private fun ReshareOptions(c: KuodraColors, viewModel: HistoryDetailViewModel) {
+private fun ReshareOptions(c: KuodraColors, rows: List<ReshareRow>, viewModel: HistoryDetailViewModel) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
-        Text("Reenviar corte", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(bottom = 12.dp))
-        ReshareButton(c, "Compartir PDF", viewModel::onShare)
-        Spacer(Modifier.height(10.dp))
-        ReshareButton(c, "Enviar por WhatsApp", viewModel::onShare)
-    }
-}
+        Text("Reenviar deudas", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(bottom = 4.dp))
+        Text("Envía a cada persona su deuda por WhatsApp o comparte el resumen.",
+            style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(bottom = 12.dp))
 
-@Composable
-private fun ReshareButton(c: KuodraColors, label: String, onClick: () -> Unit) {
-    Box(
-        Modifier.fillMaxWidth().clip(Kuodra.shape.lg).background(c.surface2).border(1.dp, c.line, Kuodra.shape.lg)
-            .clickable(onClick = onClick).padding(vertical = 15.dp),
-        contentAlignment = Alignment.Center,
-    ) { Text(label, style = Kuodra.type.heading, color = c.ink) }
-}
-
-@Composable
-private fun SharedConfirmation(c: KuodraColors, viewModel: HistoryDetailViewModel) {
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(Modifier.size(56.dp).clip(Kuodra.shape.pill).background(c.posTint), contentAlignment = Alignment.Center) {
-            Text("✓", style = Kuodra.type.displayAmount, color = c.pos)
+        rows.forEach { row ->
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 8.dp).clip(Kuodra.shape.lg)
+                    .background(c.surface2).border(1.dp, c.line, Kuodra.shape.lg)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(row.name, style = Kuodra.type.body, color = c.ink)
+                    Text(row.amount, style = Kuodra.type.caption,
+                        color = if (row.positive) c.pos else c.neg)
+                }
+                if (row.hasPhone) {
+                    Box(
+                        Modifier.clip(Kuodra.shape.md).background(c.posTint)
+                            .clickable { viewModel.onWhatsApp(row.personId) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) { Text("WhatsApp", style = Kuodra.type.caption, color = c.pos) }
+                } else {
+                    Text("Sin WhatsApp", style = Kuodra.type.caption, color = c.ink3)
+                }
+            }
         }
-        Text("Corte enviado", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(top = 12.dp))
-        Text("Se compartió el resumen del periodo.", style = Kuodra.type.caption, color = c.ink3,
-            modifier = Modifier.padding(top = 4.dp))
+
         Box(
-            Modifier.fillMaxWidth().padding(top = 18.dp).clip(Kuodra.shape.lg).background(c.primary)
-                .clickable(onClick = viewModel::onCloseSheet).padding(vertical = 15.dp),
+            Modifier.fillMaxWidth().padding(top = 4.dp).clip(Kuodra.shape.lg).background(c.primary)
+                .clickable(onClick = viewModel::onShareText).padding(vertical = 15.dp),
             contentAlignment = Alignment.Center,
-        ) { Text("Entendido", style = Kuodra.type.heading, color = c.primaryInk) }
+        ) { Text("Compartir resumen", style = Kuodra.type.heading, color = c.primaryInk) }
     }
 }

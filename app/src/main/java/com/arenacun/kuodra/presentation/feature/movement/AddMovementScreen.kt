@@ -27,7 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -35,7 +34,6 @@ import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.DateLabels
-import com.arenacun.kuodra.domain.model.MovementItem
 import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.toneForName
@@ -47,7 +45,6 @@ import com.arenacun.kuodra.presentation.component.PlusIcon
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
 import com.arenacun.kuodra.presentation.component.KuodraCalculator
 import com.arenacun.kuodra.presentation.component.KuodraCalendar
-import com.arenacun.kuodra.presentation.component.KuodraNumberPad
 import com.arenacun.kuodra.presentation.component.KuodraSearchField
 import com.arenacun.kuodra.presentation.component.ToneAvatar
 import com.arenacun.kuodra.presentation.feature.scan.ScanDraftViewModel
@@ -61,6 +58,7 @@ fun AddMovementScreen(
     onBack: () -> Unit,
     onSaved: () -> Unit,
     onOpenSplit: () -> Unit,
+    onOpenDetail: () -> Unit,
     viewModel: AddMovementViewModel = koinViewModel(),
 ) {
     val c = Kuodra.colors
@@ -192,7 +190,7 @@ fun AddMovementScreen(
             Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp).clip(Kuodra.shape.lg)
                     .border(1.dp, c.line, Kuodra.shape.lg)
-                    .clickable { viewModel.onAddItem(); viewModel.onOpenSheet(AddSheet.Detail) }
+                    .clickable { viewModel.onAddItem(); onOpenDetail() }
                     .padding(horizontal = 16.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -214,7 +212,7 @@ fun AddMovementScreen(
                 },
                 label = "Detalle",
                 value = "${state.items.size} ${if (state.items.size == 1) "partida" else "partidas"} · Ajuste ${Calc.formatAmount(state.adjustment.major)}",
-                onClick = { viewModel.onOpenSheet(AddSheet.Detail) },
+                onClick = onOpenDetail,
             )
         }
 
@@ -264,17 +262,6 @@ fun AddMovementScreen(
             )
         }
     }
-    if (state.showNumberPad) {
-        Dialog(onDismissRequest = viewModel::onDismissPad) {
-            KuodraNumberPad(
-                state = state.pad,
-                title = "CANTIDAD DE LA PARTIDA",
-                confirmLabel = "Confirmar",
-                onKey = viewModel::onPadKey,
-                onConfirm = viewModel::onConfirmItemAmount,
-            )
-        }
-    }
     if (state.showCalendar) {
         Dialog(onDismissRequest = viewModel::onDismissCalendar) {
             KuodraCalendar(
@@ -304,20 +291,6 @@ fun AddMovementScreen(
                     onCreate = viewModel::onStartCreateCategory,
                 )
             }
-        }
-        AddSheet.Detail -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            DetailSheet(
-                c = c,
-                items = state.items,
-                adjustment = Calc.formatAmount(state.adjustment.major),
-                showReturnable = uc == UseCase.Personal && state.returnStatus == ReturnStatus.Pending,
-                onConcept = viewModel::onItemConcept,
-                onAmount = viewModel::onOpenItemPad,
-                onRemove = viewModel::onRemoveItem,
-                onToggleReturnable = viewModel::onToggleItemReturnable,
-                onAdd = viewModel::onAddItem,
-                onDone = viewModel::onCloseSheet,
-            )
         }
         null -> {}
     }
@@ -466,110 +439,6 @@ private fun CategorySheet(
             }
             Text("Crear categoría", style = Kuodra.type.body, color = c.primary, modifier = Modifier.weight(1f))
         }
-    }
-}
-
-@Composable
-private fun DetailSheet(
-    c: KuodraColors,
-    items: List<MovementItem>,
-    adjustment: String,
-    showReturnable: Boolean,
-    onConcept: (String, String) -> Unit,
-    onAmount: (String) -> Unit,
-    onRemove: (String) -> Unit,
-    onToggleReturnable: (String) -> Unit,
-    onAdd: () -> Unit,
-    onDone: () -> Unit,
-) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
-        Text("Detalle", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(bottom = 4.dp))
-        Text(
-            if (showReturnable)
-                "Marca qué partidas entran en la devolución. Lo no detallado queda como Ajuste."
-            else "Desglosa el gasto en partidas. Lo no detallado queda como Ajuste.",
-            style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(bottom = 10.dp),
-        )
-
-        items.forEach { item ->
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(Kuodra.shape.lg)
-                    .background(c.surface).border(1.dp, c.line, Kuodra.shape.lg)
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (showReturnable) {
-                    Box(Modifier.clickable { onToggleReturnable(item.id) }) {
-                        CheckMark(c, item.returnable)
-                    }
-                }
-                BasicTextField(
-                    value = item.concept,
-                    onValueChange = { onConcept(item.id, it) },
-                    singleLine = true,
-                    textStyle = Kuodra.type.body.copy(color = c.ink),
-                    cursorBrush = SolidColor(c.primary),
-                    modifier = Modifier.weight(1f),
-                    decorationBox = { inner ->
-                        if (item.concept.isEmpty()) Text("Concepto", style = Kuodra.type.body, color = c.ink3)
-                        inner()
-                    },
-                )
-                Box(
-                    Modifier.clip(Kuodra.shape.md).background(c.surface2)
-                        .clickable { onAmount(item.id) }.padding(horizontal = 12.dp, vertical = 8.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Text(Calc.formatAmount(item.amount.major), style = Kuodra.type.heading, color = c.ink) }
-                Box(
-                    Modifier.size(28.dp).clip(Kuodra.shape.pill).background(c.negTint)
-                        .clickable { onRemove(item.id) },
-                    contentAlignment = Alignment.Center,
-                ) { Text("×", style = Kuodra.type.heading, color = c.neg) }
-            }
-        }
-
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(Kuodra.shape.lg)
-                .border(1.dp, c.line, Kuodra.shape.lg)
-                .clickable(onClick = onAdd).padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PlusIcon(14.dp, c.primary)
-            Text("Añadir partida", style = Kuodra.type.body, color = c.primary)
-        }
-
-        Row(
-            Modifier.fillMaxWidth().padding(top = 10.dp).clip(Kuodra.shape.lg)
-                .background(c.tint).padding(horizontal = 14.dp, vertical = 13.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Ajuste", style = Kuodra.type.body, color = c.tintInk)
-                Text("Total no detallado", style = Kuodra.type.caption, color = c.tintInk)
-            }
-            Text(adjustment, style = Kuodra.type.heading, color = c.tintInk)
-        }
-
-        Box(
-            Modifier.fillMaxWidth().padding(top = 14.dp).clip(Kuodra.shape.lg).background(c.primary)
-                .clickable(onClick = onDone).padding(vertical = 15.dp),
-            contentAlignment = Alignment.Center,
-        ) { Text("Listo", style = Kuodra.type.heading, color = c.primaryInk) }
-    }
-}
-
-@Composable
-private fun CheckMark(c: KuodraColors, checked: Boolean) {
-    Box(
-        Modifier.size(22.dp).clip(Kuodra.shape.sm)
-            .background(if (checked) c.primary else c.surface)
-            .border(1.5.dp, if (checked) c.primary else c.line, Kuodra.shape.sm),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (checked) Text("✓", style = Kuodra.type.caption, color = c.primaryInk, textAlign = TextAlign.Center)
     }
 }
 

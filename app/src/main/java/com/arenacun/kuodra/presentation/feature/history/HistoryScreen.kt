@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.SettlementRecord
+import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.component.Chevron
 import com.arenacun.kuodra.presentation.theme.Kuodra
@@ -45,13 +46,21 @@ fun HistoryScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             BackCircle(onClick = onBack)
-            Text("Historial de cortes", style = Kuodra.type.heading, color = c.ink)
+            Text(
+                if (viewModel.useCase == UseCase.Gastos) "Historial de liquidaciones" else "Historial de cortes",
+                style = Kuodra.type.heading, color = c.ink,
+            )
         }
 
         val records by viewModel.records.collectAsStateWithLifecycle()
         if (records.isEmpty()) {
-            Text("Aún no hay periodos cerrados", style = Kuodra.type.body, color = c.ink3,
-                modifier = Modifier.padding(top = 24.dp))
+            Text(
+                if (viewModel.useCase == UseCase.Gastos)
+                    "Aún no has liquidado. Registra una liquidación para verla aquí."
+                else "Aún no hay periodos cerrados",
+                style = Kuodra.type.body, color = c.ink3,
+                modifier = Modifier.padding(top = 24.dp),
+            )
         }
         records.forEach { record -> RecordCard(c, record, onOpen) }
     }

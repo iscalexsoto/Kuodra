@@ -16,9 +16,20 @@ data class Transfer(val fromId: String, val toId: String, val amount: Money)
 data class SettlementBalanceLine(val personId: String, val name: String, val net: Money)
 
 /**
+ * Tipo de registro en la colección de liquidaciones:
+ * - [Corte]: cierre de todo el periodo (congela saldos y estampa los movimientos vivos).
+ * - [Payment]: pago individual de una persona (parcial o total). Ajusta el saldo de esa persona sin
+ *   estampar movimientos; lleva una sola línea y una sola transferencia.
+ */
+enum class SettlementKind { Corte, Payment }
+
+/**
  * Corte/liquidación de un espacio de Gastos: congela los saldos por persona y las transferencias
  * sugeridas de un periodo. Sucesor data-shaped de `SettlementRecord` (que era todo-strings) para
  * Gastos, análogo a [PeriodSnapshot] en Personal. Persistible y sincronizable.
+ *
+ * Un [kind] = [SettlementKind.Payment] representa un pago individual: [settledBy] guarda el id del
+ * corte que lo "consumió" (`""` = vivo, aún cuenta en los balances).
  */
 data class Settlement(
     val id: String,
@@ -29,4 +40,6 @@ data class Settlement(
     val lines: List<SettlementBalanceLine>,
     val transfers: List<Transfer>,
     val createdAt: Long,
+    val kind: SettlementKind = SettlementKind.Corte,
+    val settledBy: String = "",
 )

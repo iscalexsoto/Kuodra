@@ -335,5 +335,6 @@ class SyncManagerTest {
         override suspend fun markSynced(id: String, remoteUpdated: String) = Unit
         override suspend fun upsert(settlement: SettlementEntity) = Unit
         override suspend fun softDelete(id: String, updatedAt: Long) = Unit
+        override suspend fun stampSettledBy(ids: List<String>, corteId: String, updatedAt: Long) = Unit
     }
 }

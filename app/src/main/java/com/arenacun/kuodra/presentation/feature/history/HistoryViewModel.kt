@@ -25,6 +25,9 @@ class HistoryViewModel(
 ) : ViewModel() {
     private val space = spaceRepository.activeSpace.value
 
+    /** Caso de uso del espacio activo: adapta título y vacío (cortes Personal vs liquidaciones Gastos). */
+    val useCase: UseCase = space.useCase
+
     val records: StateFlow<List<SettlementRecord>> =
         if (space.useCase == UseCase.Personal) {
             flowOf(settingsRepository.history())

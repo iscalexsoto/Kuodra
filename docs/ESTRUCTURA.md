@@ -30,14 +30,18 @@ cableadas en [`navigation/KuodraNavHost.kt`](../app/src/main/java/com/arenacun/k
 | `AllMovements` | ver todo (búsqueda/filtros) | `scrVerTodo` | "Ver todo" del dashboard |
 | `Settings` | ajustes adaptativos | `scr*Settings` | menú → "Ajustes" |
 | `Categories` | gestión de categorías (buscador) | — | Ajustes → "Categorías" |
-| `Settle` | liquidación (balances reales + WhatsApp) | `scrSettle` | tarjeta "Liquidar" |
-| `AddGraph` → `SplitConfig` | pagadores + división de un gasto compartido (comparte el `AddMovementViewModel`) | — | FieldRow "Dividir gasto" en `AddMovement` |
-| `History` / `HistoryDetail(id)` | historial de cortes | `scrHistory` | Ajustes → "Historial" / menú |
+| `Settle` | liquidación: corte global + **liquidar por persona** (pago parcial/total con `KuodraNumberPad`) + WhatsApp | `scrSettle` | tarjeta "Liquidar saldos" |
+| `AddGraph` → `SplitConfig` | pagadores + división de un gasto compartido (comparte el `AddMovementViewModel`); con >2 miembros la lista se **colapsa** a los seleccionados + botón que abre una hoja de selección; pagador único = total no editable; montos/% vía `KuodraNumberPad` | — | FieldRow "Dividir gasto" en `AddMovement` |
+| `AddGraph` → `DetailConfig` | **detalle (partidas)** en pantalla propia (comparte el `AddMovementViewModel`): solo la lista scrollea; "Ajuste" + "Listo" fijos abajo; number pad de la cantidad | — | FieldRow/"Añadir detalle" en `AddMovement` |
+| `History` / `HistoryDetail(id)` | historial de cortes y **pagos**; el detalle **reenvía** las deudas por WhatsApp o comparte el resumen | `scrHistory` | Ajustes → "Historial" / menú |
 
 **Overlays sin destino propio** (estado en el `UiState` del ViewModel, no en `remember`):
-- En `AddMovement`: **calculadora** (`Dialog`), **calendario** (`Dialog`), sheets de **categoría** y
-  **detalle** (`ModalBottomSheet`), y **diálogo** de gasto Personal derivado. Pagadores y división van
-  a la pantalla `SplitConfig`.
+- En `AddMovement`: **calculadora** (`Dialog`), **calendario** (`Dialog`), sheet de **categoría**
+  (`ModalBottomSheet`), y **diálogo** de gasto Personal derivado. Detalle, pagadores y división van a
+  pantallas propias (`DetailConfig` / `SplitConfig`).
+- En `SplitConfig` (estado en el `AddMovementUiState` compartido): **number pad** de monto/porcentaje
+  (`Dialog`, ruteado por `SplitPadTarget`) y **hojas de selección** de pagadores/participantes
+  (`KuodraBottomSheet`, enum `SplitSheet`).
 - En `Dashboard` (estado `DashboardOverlay`, hoja activa en el enum `DashboardSheet`):
   **selector de espacios** "Tus espacios" (Personal + espacios de Gastos + archivados, al tocar el
   título; "Crear espacio" navega a `CreateSpace`), y **menú "Opciones"** del espacio (botón ···, filas
@@ -282,8 +286,11 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
 - **El seed en memoria se eliminó**: Gastos ya es real (Room + sync), igual que Personal.
 - **Lógica de negocio pura reutilizable** en `domain/usecase`: `BudgetPeriod`, `ClosePeriod` y
   `ReturnCalc` (Personal); y de Gastos: `SplitCalc` (resuelve/valida la división a centavos),
-  `SharedBalances` (neto por persona), `SettleSuggestions` (transferencias, greedy determinístico),
-  `CloseSettlement` (congela el `Settlement` + ids a estampar) y `WhatsAppMessage`.
+  `SharedBalances` (neto por persona; resta los **pagos** vivos), `SettleSuggestions` (transferencias,
+  greedy determinístico), `RecordPayment` (arma un pago individual como `Settlement` kind=Payment),
+  `CloseSettlement` (congela el corte + ids de movimientos y pagos a consumir), `ShareSummary` y
+  `WhatsAppMessage`. Un corte y un pago individual comparten la colección `settlements`
+  (`SettlementKind` = `Corte`/`Payment`; `settledBy` marca los pagos consumidos por un corte).
 - El "hoy" es la fecha real del sistema (`LocalDate.now()`), inyectable como parámetro en los ViewModels
   que lo usan para poder fijarlo en tests.
 

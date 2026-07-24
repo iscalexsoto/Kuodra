@@ -14,7 +14,12 @@ data class ContactDraft(
     /** Id del contacto si se está editando; null si es nuevo. */
     val id: String?,
     val name: String,
+    /** Solo el número local (sin código de país). */
     val whatsapp: String,
+    /** Código de país seleccionado (p. ej. "+52"). */
+    val dialCode: String = com.arenacun.kuodra.domain.model.Countries.DEFAULT.dialCode,
+    /** true = el selector de país está abierto. */
+    val countryPickerOpen: Boolean = false,
 )
 
 data class SettingsUiState(

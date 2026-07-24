@@ -48,5 +48,5 @@ val presentationModule = module {
     viewModel { (source: ScanSource) -> ScanTicketViewModel(source, get(), get()) }
     viewModel { (useCase: UseCase) -> CreateSpaceViewModel(useCase, get()) }
     viewModel { (id: String) -> MovementDetailViewModel(id, get(), get(), get(), get(), get()) }
-    viewModel { (id: String) -> HistoryDetailViewModel(id, get(), get(), get()) }
+    viewModel { (id: String) -> HistoryDetailViewModel(id, get(), get(), get(), get()) }
 }

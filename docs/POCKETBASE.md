@@ -302,21 +302,25 @@ conectados; solo a quién se reparte y a quién se cobra. El dueño ("Tú") **no
 | `phone`   | text   | Formato internacional para `wa.me`; opcional.      |
 | `deleted` | bool   | Tombstone.                                          |
 
-### `settlements` (tipo: Base) — cortes de Gastos
+### `settlements` (tipo: Base) — cortes y pagos de Gastos
 
 Corte/liquidación congelado de un espacio (sucesor data-shaped de `period_snapshots`, pero por
-persona en vez de por categoría). Al cerrar, los movimientos vivos se estampan con su `settlementId`.
+persona en vez de por categoría). Al cerrar un **corte**, los movimientos vivos se estampan con su
+`settlementId`. La misma colección guarda **pagos individuales** (`kind = "Payment"`): ajustan el
+saldo de una persona sin estampar movimientos, y un corte posterior los marca con `settledBy`.
 
 | Campo       | Tipo   | Notas                                                        |
 |-------------|--------|--------------------------------------------------------------|
 | `owner`     | relation → `users` (single, required, cascade)               | |
 | `space`     | text   | Id del `spaces`.                                             |
-| `title`     | text   | P. ej. "Liquidación de junio".                              |
+| `title`     | text   | P. ej. "Liquidación de junio" o "Pago de Andrea".           |
 | `date`      | text   | ISO `yyyy-MM-dd`.                                            |
 | `total`     | number | Centavos.                                                   |
 | `lines`     | json   | Saldo por persona congelado: `[{personId, name, net(centavos)}]`. |
 | `transfers` | json   | Transferencias sugeridas: `[{fromId, toId, amount(centavos)}]`. |
 | `createdAt` | number | epoch millis.                                               |
+| `kind`      | text   | `"Corte"` (default) o `"Payment"` (pago individual).        |
+| `settledBy` | text   | Solo pagos: id del corte que lo consumió; `""` = vivo.      |
 | `deleted`   | bool   | Tombstone.                                                   |
 
 ### API rules (en TODAS las colecciones de datos de arriba)
@@ -477,6 +481,7 @@ Escaneo de tickets:
 
 | Fecha      | Cambio                                                                 |
 |------------|------------------------------------------------------------------------|
+| 2026-07-24 | Liquidación parcial: la colección `settlements` gana `kind` (text, default `"Corte"`; `"Payment"` = pago individual) y `settledBy` (text, id del corte que consumió un pago). Crear ambas columnas **antes** de desplegar (si no, el pull las pierde). Sin nuevas colecciones. |
 | 2026-07-24 | Gastos compartidos por id: las columnas legacy `payer`/`splitNames` de `movements` quedan sin uso (el cliente usa `payers`/`splits`). Se pueden eliminar del servidor; no es urgente (columnas ignoradas no rompen nada). |
 | 2026-07-23 | Gastos compartidos: nuevas colecciones `spaces`, `persons`, `settlements` (Base, mismas API rules multi-tenant) + columnas `space`/`payers`/`splitMode`/`splits`/`settlementId` en `movements`. Crear todo **antes** de desplegar el cliente (sin las columnas de `movements` el pull borra los datos locales). |
 | 2026-07-23 | Caja chica retirada del producto: la clave `inFund` desaparece del json `items` (solo lado cliente; el resto del blob no cambia y las claves legacy se ignoran). Sin cambios de columnas en el servidor. |

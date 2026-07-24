@@ -92,6 +92,13 @@ class DashboardViewModelTest {
         override suspend fun add(snapshot: PeriodSnapshot) = Unit
     }
 
+    private class FakeSettlementRepository : com.arenacun.kuodra.domain.repository.SettlementRepository {
+        override fun settlements(spaceId: String): kotlinx.coroutines.flow.Flow<List<com.arenacun.kuodra.domain.model.Settlement>> =
+            MutableStateFlow(emptyList())
+        override suspend fun close(settlement: com.arenacun.kuodra.domain.model.Settlement, movementIds: List<String>, paymentIds: List<String>) = Unit
+        override suspend fun record(payment: com.arenacun.kuodra.domain.model.Settlement) = Unit
+    }
+
     @Test
     fun `deleting a movement removes it from the dashboard state`() = runTest {
         val movementRepository = FakeMovementRepository(listOf(movement("a"), movement("b")))
@@ -102,6 +109,7 @@ class DashboardViewModelTest {
             settingsRepository = FakeSettingsRepository(),
             snapshotRepository = FakeSnapshotRepository(),
             personRepository = FakePersonRepository(),
+            settlementRepository = FakeSettlementRepository(),
         )
 
         // Activa la suscripción (SharingStarted.WhileSubscribed).
@@ -134,6 +142,7 @@ class DashboardViewModelTest {
             settingsRepository = FakeSettingsRepository(settings),
             snapshotRepository = FakeSnapshotRepository(),
             personRepository = FakePersonRepository(),
+            settlementRepository = FakeSettlementRepository(),
         )
 
         val collectJob = launch { viewModel.uiState.collect {} }
@@ -162,15 +171,20 @@ class DashboardViewModelTest {
             settingsRepository = FakeSettingsRepository(),
             snapshotRepository = FakeSnapshotRepository(),
             personRepository = FakePersonRepository(),
+            settlementRepository = FakeSettlementRepository(),
         )
 
         viewModel.onOpenMenu()
         assertEquals(DashboardSheet.Menu, viewModel.overlay.value.sheet)
 
+        // Compartir resumen: emite el texto por el flujo `share` y cierra el menú (share nativo).
+        val shared = mutableListOf<String>()
+        val shareJob = launch { viewModel.share.collect { shared += it } }
         viewModel.onShare()
-        assertEquals(DashboardSheet.Share, viewModel.overlay.value.sheet)
-        viewModel.onShareConfirm()
-        assertEquals(DashboardSheet.Shared, viewModel.overlay.value.sheet)
+        advanceUntilIdle()
+        assertEquals(DashboardSheet.None, viewModel.overlay.value.sheet)
+        assertEquals(1, shared.size)
+        shareJob.cancel()
 
         viewModel.onClosePeriod()
         assertEquals(DashboardSheet.PCloseConfirm, viewModel.overlay.value.sheet)
