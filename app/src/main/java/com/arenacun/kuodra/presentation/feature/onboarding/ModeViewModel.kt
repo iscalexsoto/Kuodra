@@ -31,6 +31,6 @@ class ModeViewModel(
 
     /** Camino "solo personal": el espacio queda listo sin pasar por Crear. */
     fun selectPersonal() {
-        spaceRepository.selectUseCase(UseCase.Personal)
+        spaceRepository.selectPersonal()
     }
 }

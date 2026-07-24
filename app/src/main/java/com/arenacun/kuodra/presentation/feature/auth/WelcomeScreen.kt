@@ -5,14 +5,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,7 +29,9 @@ import androidx.compose.ui.unit.dp
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.arenacun.kuodra.R
 import com.arenacun.kuodra.presentation.app.StartState
+import com.arenacun.kuodra.presentation.component.KIcon
 import com.arenacun.kuodra.presentation.component.KLogoMark
 import com.arenacun.kuodra.presentation.theme.Kuodra
 import kotlinx.coroutines.delay
@@ -128,10 +128,7 @@ fun WelcomeScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier.size(24.dp).clip(Kuodra.shape.pill).border(1.5.dp, c.line, Kuodra.shape.pill),
-                    contentAlignment = Alignment.Center,
-                ) { Text("G", style = Kuodra.type.heading, color = c.ink2) }
+                KIcon(R.drawable.ic_google, size = 20.dp, tint = c.ink2)
                 Spacer(Modifier.width(11.dp))
                 Text(
                     if (state.googleLoading) "Conectando…" else "Continuar con Google",
@@ -156,6 +153,8 @@ fun WelcomeScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                KIcon(R.drawable.ic_mail, size = 20.dp, tint = c.primaryInk)
+                Spacer(Modifier.width(11.dp))
                 Text("Continuar con correo", style = Kuodra.type.heading, color = c.primaryInk)
             }
             Text(

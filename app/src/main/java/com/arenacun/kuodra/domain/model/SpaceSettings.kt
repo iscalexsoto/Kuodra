@@ -1,14 +1,17 @@
 package com.arenacun.kuodra.domain.model
 
+import com.arenacun.kuodra.domain.usecase.ReturnCalc
+
 /** Frecuencia del presupuesto personal (`scrPersonalSettings` del prototipo). */
 enum class BudgetFrequency(val label: String) {
     Weekly("Semanal"), Biweekly("Quincenal"), Monthly("Mensual"), Custom("Personalizado")
 }
 
 /**
- * Configuración del presupuesto (solo Personal). Cada frecuencia usa su propio campo de día:
- * [weekday] (Semanal), [firstDay]+[secondDay] (Quincenal), [monthlyDay] (Mensual) e
- * [customInterval] (Personalizado). Réplica de `scrPersonalSettings` del prototipo.
+ * Configuración del presupuesto y las devoluciones (solo Personal). Cada frecuencia usa su propio
+ * campo de día: [weekday] (Semanal), [firstDay]+[secondDay] (Quincenal), [monthlyDay] (Mensual) e
+ * [customInterval] (Personalizado). Réplica de `scrPersonalSettings` del prototipo, extendida con
+ * [returnPercent] (el % global vivo de los movimientos "Por devolver").
  */
 data class BudgetConfig(
     val enabled: Boolean,
@@ -25,6 +28,8 @@ data class BudgetConfig(
     val monthlyDay: Int = 1,
     /** Personalizado: cierra el periodo cada N días. */
     val customInterval: Int = 15,
+    /** % global a devolver de los movimientos "Por devolver" (5..100). Independiente de [enabled]. */
+    val returnPercent: Int = ReturnCalc.DEFAULT_RETURN_PERCENT,
 ) {
     companion object {
         /** Presupuesto por defecto (apagado) de un usuario nuevo. */
@@ -38,24 +43,16 @@ data class BudgetConfig(
     }
 }
 
-/** Configuración del fondo de caja chica (solo Caja). */
-data class FundConfig(
-    /** Monto inicial formateado, p. ej. "$5,000". */
-    val initial: String,
-)
-
 /**
- * Ajustes del espacio. Un único modelo que cubre los tres `scr*Settings` del prototipo:
+ * Ajustes del espacio. Un único modelo que cubre los `scr*Settings` del prototipo:
  * el contenido relevante cambia por caso de uso (presupuesto en Personal, miembros y
- * recordatorio en Gastos, fondo y autorizados en Caja).
+ * recordatorio en Gastos).
  */
 data class SpaceSettings(
     val name: String,
-    /** Miembros / autorizados (vacío en Personal). */
+    /** Miembros (vacío en Personal). */
     val members: List<Person>,
     /** Presupuesto (solo Personal; null en el resto). */
     val budget: BudgetConfig?,
-    /** Fondo (solo Caja; null en el resto). */
-    val fund: FundConfig?,
     val reminderEnabled: Boolean,
 )

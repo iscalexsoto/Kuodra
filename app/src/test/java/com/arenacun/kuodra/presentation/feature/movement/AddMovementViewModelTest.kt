@@ -5,13 +5,13 @@ import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.MovementItem
-import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.Space
-import com.arenacun.kuodra.domain.model.UseCase
+import com.arenacun.kuodra.domain.model.SpacePerson
+import com.arenacun.kuodra.domain.model.SplitShare
 import com.arenacun.kuodra.domain.repository.CategoryRepository
 import com.arenacun.kuodra.domain.repository.MovementRepository
+import com.arenacun.kuodra.domain.repository.PersonRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
-import com.arenacun.kuodra.domain.repository.SummaryRepository
 import com.arenacun.kuodra.domain.scan.ParsedTicket
 import com.arenacun.kuodra.domain.scan.ParsedTicketItem
 import com.arenacun.kuodra.domain.scan.ScanSource
@@ -24,10 +24,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -40,15 +42,23 @@ class AddMovementViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     private class FakeSpaceRepository : SpaceRepository {
-        override val activeSpace: StateFlow<Space> = MutableStateFlow(Space(UseCase.Personal))
-        override fun selectUseCase(useCase: UseCase) = Unit
-        override fun createSpace(useCase: UseCase, name: String) = Unit
+        override val activeSpace: StateFlow<Space> = MutableStateFlow(Space.PERSONAL)
+        override val spaces: Flow<List<Space>> = MutableStateFlow(emptyList())
+        override fun selectPersonal() = Unit
+        override fun selectSpace(id: String) = Unit
+        override suspend fun createSpace(name: String): Space = Space.PERSONAL
+        override suspend fun rename(id: String, name: String) = Unit
+        override suspend fun setReminder(id: String, enabled: Boolean) = Unit
+        override suspend fun archive(id: String) = Unit
+        override suspend fun unarchive(id: String) = Unit
         override suspend fun isConfigured(): Boolean = true
     }
 
-    private class FakeSummaryRepository : SummaryRepository {
-        override fun people(useCase: UseCase): List<Person> = emptyList()
-        override fun categories(): List<Category> = emptyList()
+    private class FakePersonRepository : PersonRepository {
+        override fun persons(spaceId: String): Flow<List<SpacePerson>> = MutableStateFlow(emptyList())
+        override suspend fun add(spaceId: String, person: SpacePerson) = Unit
+        override suspend fun update(spaceId: String, person: SpacePerson) = Unit
+        override suspend fun delete(id: String) = Unit
     }
 
     private class FakeCategoryRepository : CategoryRepository {
@@ -65,18 +75,18 @@ class AddMovementViewModelTest {
         val added = mutableListOf<Movement>()
         val updated = mutableListOf<Movement>()
         private val movements = MutableStateFlow(initial)
-        override fun movements(useCase: UseCase): Flow<List<Movement>> = movements.asStateFlow()
-        override suspend fun movement(useCase: UseCase, id: String): Movement? =
+        override fun movements(spaceId: String): Flow<List<Movement>> = movements.asStateFlow()
+        override suspend fun movement(id: String): Movement? =
             movements.value.find { it.id == id }
-        override suspend fun add(useCase: UseCase, movement: Movement) {
+        override suspend fun add(movement: Movement) {
             added += movement
             movements.update { it + movement }
         }
-        override suspend fun update(useCase: UseCase, movement: Movement) {
+        override suspend fun update(movement: Movement) {
             updated += movement
             movements.update { list -> list.map { if (it.id == movement.id) movement else it } }
         }
-        override suspend fun delete(useCase: UseCase, id: String) = Unit
+        override suspend fun delete(id: String) = Unit
     }
 
     private fun viewModel(
@@ -85,7 +95,7 @@ class AddMovementViewModelTest {
     ) = AddMovementViewModel(
         editId = editId,
         spaceRepository = FakeSpaceRepository(),
-        summaryRepository = FakeSummaryRepository(),
+        personRepository = FakePersonRepository(),
         categoryRepository = FakeCategoryRepository(),
         movementRepository = repository,
     )
@@ -258,5 +268,138 @@ class AddMovementViewModelTest {
         assertNull(saved.scanSource)
         assertEquals("Tacos", saved.title)
         assertTrue(saved.items.isEmpty())
+    }
+
+    // ---- División (Gastos) ----
+
+    private class GastosSpaceRepository : SpaceRepository {
+        override val activeSpace: StateFlow<Space> =
+            MutableStateFlow(Space(id = "s1", useCase = com.arenacun.kuodra.domain.model.UseCase.Gastos, name = "Casa"))
+        override val spaces: Flow<List<Space>> = MutableStateFlow(emptyList())
+        override fun selectPersonal() = Unit
+        override fun selectSpace(id: String) = Unit
+        override suspend fun createSpace(name: String): Space = activeSpace.value
+        override suspend fun rename(id: String, name: String) = Unit
+        override suspend fun setReminder(id: String, enabled: Boolean) = Unit
+        override suspend fun archive(id: String) = Unit
+        override suspend fun unarchive(id: String) = Unit
+        override suspend fun isConfigured(): Boolean = true
+    }
+
+    private class TwoPersonRepository : PersonRepository {
+        override fun persons(spaceId: String): Flow<List<SpacePerson>> =
+            MutableStateFlow(listOf(SpacePerson("a", "Andrea"), SpacePerson("b", "Beto")))
+        override suspend fun add(spaceId: String, person: SpacePerson) = Unit
+        override suspend fun update(spaceId: String, person: SpacePerson) = Unit
+        override suspend fun delete(id: String) = Unit
+    }
+
+    private fun gastosViewModel(repository: FakeMovementRepository) = AddMovementViewModel(
+        editId = null,
+        spaceRepository = GastosSpaceRepository(),
+        personRepository = TwoPersonRepository(),
+        categoryRepository = FakeCategoryRepository(),
+        movementRepository = repository,
+    )
+
+    @Test
+    fun `equal split resolves to exact cents summing the total`() = runTest {
+        val repository = FakeMovementRepository()
+        val vm = gastosViewModel(repository)
+        advanceUntilIdle()
+        vm.applyScan(scan(total = Money(100000))) // $1000
+        // Por defecto: "Tú" paga todo y la división es equitativa entre los 3 miembros.
+        vm.onSave()
+        advanceUntilIdle()
+
+        val saved = repository.added.single()
+        assertEquals(3, saved.splits.size)
+        assertEquals(100000L, saved.splits.sumOf { it.share.cents })
+        assertEquals(com.arenacun.kuodra.domain.model.PersonRef.ME, saved.payers.single().personId)
+        assertEquals(100000L, saved.payers.single().amount.cents)
+    }
+
+    @Test
+    fun `percent split resolves and validates to one hundred`() = runTest {
+        val repository = FakeMovementRepository()
+        val vm = gastosViewModel(repository)
+        advanceUntilIdle()
+        vm.applyScan(scan(total = Money(30000))) // $300
+        vm.onSetSplitMode(com.arenacun.kuodra.domain.model.SplitMode.Percent)
+        // Solo Tú y Andrea, 50/50.
+        vm.onToggleSplitMember("b")
+        vm.onSetSplitPercent(com.arenacun.kuodra.domain.model.PersonRef.ME, 50)
+        vm.onSetSplitPercent("a", 50)
+        assertNull(vm.splitError(vm.uiState.value))
+
+        vm.onSave()
+        advanceUntilIdle()
+        val saved = repository.added.single()
+        assertEquals(30000L, saved.splits.sumOf { it.share.cents })
+    }
+
+    @Test
+    fun `payers must sum the total`() = runTest {
+        val repository = FakeMovementRepository()
+        val vm = gastosViewModel(repository)
+        advanceUntilIdle()
+        vm.applyScan(scan(total = Money(100000))) // $1000
+        // Añadir a Andrea como pagador sin monto rompe la suma (ya hay 2 pagadores).
+        vm.onTogglePayer("a")
+        assertNotNull(vm.payersError(vm.uiState.value))
+        // Repartir 600/400 cuadra.
+        vm.onSetPayerAmount(com.arenacun.kuodra.domain.model.PersonRef.ME, 60000L)
+        vm.onSetPayerAmount("a", 40000L)
+        assertNull(vm.payersError(vm.uiState.value))
+    }
+
+    // ---- Gasto Personal derivado ----
+
+    @Test
+    fun `save offers a personal copy and confirming records your share`() = runTest {
+        val repository = FakeMovementRepository()
+        val vm = gastosViewModel(repository)
+        advanceUntilIdle()
+        vm.applyScan(scan(total = Money(90000))) // $900, equitativo entre 3 ⇒ tu parte $300
+
+        val results = mutableListOf<SaveResult>()
+        val job = launch { vm.saved.collect { results += it } }
+        vm.onSave()
+        advanceUntilIdle()
+
+        // Se guardó el compartido y se ofreció la copia Personal (no se registró aún).
+        assertEquals(1, repository.added.count { it.spaceId == "s1" })
+        assertTrue(results.single() is SaveResult.OfferPersonalCopy)
+
+        vm.onConfirmPersonalCopy()
+        advanceUntilIdle()
+        val personal = repository.added.single { it.spaceId == "" }
+        assertEquals(30000L, personal.amount.cents)
+        job.cancel()
+    }
+
+    @Test
+    fun `editing a shared expense does not offer a personal copy`() = runTest {
+        val existing = existingMovement().copy(
+            spaceId = "s1",
+            splits = listOf(SplitShare(com.arenacun.kuodra.domain.model.PersonRef.ME, Money(30000))),
+        )
+        val repository = FakeMovementRepository(initial = listOf(existing))
+        val vm = AddMovementViewModel(
+            editId = "m1",
+            spaceRepository = GastosSpaceRepository(),
+            personRepository = TwoPersonRepository(),
+            categoryRepository = FakeCategoryRepository(),
+            movementRepository = repository,
+        )
+        advanceUntilIdle()
+
+        val results = mutableListOf<SaveResult>()
+        val job = launch { vm.saved.collect { results += it } }
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertTrue(results.single() is SaveResult.Done)
+        job.cancel()
     }
 }

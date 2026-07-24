@@ -14,10 +14,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.SettlementRecord
 import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.component.Chevron
@@ -46,11 +48,12 @@ fun HistoryScreen(
             Text("Historial de cortes", style = Kuodra.type.heading, color = c.ink)
         }
 
-        if (viewModel.records.isEmpty()) {
+        val records by viewModel.records.collectAsStateWithLifecycle()
+        if (records.isEmpty()) {
             Text("Aún no hay periodos cerrados", style = Kuodra.type.body, color = c.ink3,
                 modifier = Modifier.padding(top = 24.dp))
         }
-        viewModel.records.forEach { record -> RecordCard(c, record, onOpen) }
+        records.forEach { record -> RecordCard(c, record, onOpen) }
     }
 }
 

@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
  */
 @Keep
 @Serializable
-enum class UseCase { Personal, Gastos, Caja }
+enum class UseCase { Personal, Gastos }
 
 /** Terminología por caso de uso (objeto `t` del prototipo). */
 data class Terminology(
@@ -34,10 +34,5 @@ fun terminologyFor(useCase: UseCase): Terminology = when (useCase) {
         groupName = "Casa Roma", containerKind = "Grupo", roleLabel = "4 miembros",
         heroLabel = "Tu balance del mes", addTitle = "Nuevo gasto",
         paidLabel = "¿Quién pagó?", saveNoun = "gasto", settleTitle = "Liquidación de junio",
-    )
-    UseCase.Caja -> Terminology(
-        groupName = "Caja Changarro", containerKind = "Fondo", roleLabel = "Responsable de caja",
-        heroLabel = "Fondo disponible", addTitle = "Nuevo movimiento",
-        paidLabel = "¿Quién reportó?", saveNoun = "movimiento", settleTitle = "Corte de caja",
     )
 }

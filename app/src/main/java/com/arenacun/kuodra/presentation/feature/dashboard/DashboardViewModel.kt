@@ -7,18 +7,29 @@ import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.BudgetFrequency
 import com.arenacun.kuodra.domain.model.DateLabels
+import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
+import com.arenacun.kuodra.domain.model.Person
+import com.arenacun.kuodra.domain.model.PersonRef
+import com.arenacun.kuodra.domain.model.ReturnStatus
+import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.UseCase
+import com.arenacun.kuodra.domain.model.initialsOf
+import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.domain.model.total
+import com.arenacun.kuodra.domain.usecase.SettleSuggestions
+import com.arenacun.kuodra.domain.usecase.SharedBalances
 import com.arenacun.kuodra.domain.repository.MovementRepository
+import com.arenacun.kuodra.domain.repository.PersonRepository
 import com.arenacun.kuodra.domain.repository.SettingsRepository
 import com.arenacun.kuodra.domain.repository.SnapshotRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
 import com.arenacun.kuodra.domain.usecase.BudgetPeriod
 import com.arenacun.kuodra.domain.usecase.ClosePeriod
+import com.arenacun.kuodra.domain.usecase.ReturnCalc
 import com.arenacun.kuodra.presentation.feature.movement.toUi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,23 +52,34 @@ class DashboardViewModel(
     private val summaryRepository: SummaryRepository,
     private val settingsRepository: SettingsRepository,
     private val snapshotRepository: SnapshotRepository,
+    private val personRepository: PersonRepository,
 ) : ViewModel() {
 
     private val today: LocalDate = LocalDate.now()
 
+    /** Espacios de Gastos (para el selector). */
+    val spaces = spaceRepository.spaces
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val uiState = spaceRepository.activeSpace
         .flatMapLatest { space ->
             combine(
-                movementRepository.movements(space.useCase),
-                settingsRepository.settings(space.useCase),
-            ) { movements, settings ->
+                movementRepository.movements(space.id),
+                settingsRepository.settings(),
+                personRepository.persons(space.id),
+            ) { movements, settings, people ->
                 val categories = summaryRepository.categories().associateBy { it.id }
+                val percent = settings.budget?.returnPercent ?: ReturnCalc.DEFAULT_RETURN_PERCENT
+                val persons = people.associate { it.id to it.name }
+                val gastos = space.useCase == UseCase.Gastos
                 DashboardUiState(
                     space = space,
-                    movements = movements.map { it.toUi(categories, space.useCase, today) },
-                    people = summaryRepository.people(space.useCase),
+                    movements = movements.map { it.toUi(categories, space.useCase, today, percent, persons) },
+                    people = if (gastos) peopleBalances(movements, people) else emptyList(),
                     categories = breakdown(movements, categories),
                     personalHero = if (space.useCase == UseCase.Personal) personalHero(movements, settings) else null,
+                    gastosHero = if (gastos) gastosHero(movements) else null,
+                    pendingReturns = if (space.useCase == UseCase.Personal) pendingReturns(movements, percent) else null,
                 )
             }
         }
@@ -69,7 +91,6 @@ class DashboardViewModel(
 
     // ---- Hojas inferiores (espacios / crear / menú) ----
     fun onOpenSpaces() = menu.update { it.copy(sheet = DashboardSheet.Spaces) }
-    fun onOpenCreateSpace() = menu.update { it.copy(sheet = DashboardSheet.CreateSpace) }
     fun onOpenMenu() = menu.update { it.copy(sheet = DashboardSheet.Menu) }
     fun onOpenAddOptions() = menu.update { it.copy(sheet = DashboardSheet.AddOptions) }
     fun onCloseSheet() = menu.update { it.copy(sheet = DashboardSheet.None) }
@@ -86,8 +107,8 @@ class DashboardViewModel(
         viewModelScope.launch {
             val useCase = spaceRepository.activeSpace.value.useCase
             if (useCase == UseCase.Personal) {
-                val movements = movementRepository.movements(useCase).first()
-                val budget = settingsRepository.settings(useCase).value.budget
+                val movements = movementRepository.movements("").first()
+                val budget = settingsRepository.settings().value.budget
                 val categories = summaryRepository.categories().associateBy { it.id }
                 snapshotRepository.add(ClosePeriod.build(budget, movements, categories, today))
             }
@@ -95,20 +116,107 @@ class DashboardViewModel(
         }
     }
 
-    /** Cambia al espacio (caso de uso) elegido y cierra el selector. */
-    fun onSelectUseCase(useCase: UseCase) {
-        spaceRepository.selectUseCase(useCase)
+    // ---- Marcar todo como devuelto (Personal) ----
+    fun onMarkAllReturned() = menu.update { it.copy(sheet = DashboardSheet.ReturnAllConfirm) }
+
+    /** Estampa el % global vigente en cada movimiento por devolver y los pasa a Devuelto. */
+    fun onMarkAllReturnedConfirm() {
+        viewModelScope.launch {
+            val useCase = spaceRepository.activeSpace.value.useCase
+            if (useCase == UseCase.Personal) {
+                val percent = settingsRepository.settings().value.budget?.returnPercent
+                    ?: ReturnCalc.DEFAULT_RETURN_PERCENT
+                val movements = movementRepository.movements("").first()
+                movements.filter { it.returnStatus == ReturnStatus.Pending }.forEach { m ->
+                    movementRepository.update(m.copy(returnStatus = ReturnStatus.Returned, returnPercent = percent))
+                }
+            }
+            menu.update { it.copy(sheet = DashboardSheet.ReturnAllDone) }
+        }
+    }
+
+    /**
+     * Personas del dashboard Gastos con su saldo (desde los movimientos vivos). Neto de una persona
+     * < 0 ⇒ debe al grupo ("te debe" desde tu vista); > 0 ⇒ el grupo le debe ("le debes").
+     */
+    private fun peopleBalances(movements: List<Movement>, contacts: List<SpacePerson>): List<Person> {
+        val balances = SharedBalances.compute(movements)
+        val byId = contacts.associateBy { it.id }
+        return balances.filterKeys { it != PersonRef.ME }
+            .entries.sortedByDescending { -it.value } // más deudores primero
+            .map { (id, net) ->
+                val name = byId[id]?.name ?: "(eliminado)"
+                val owes = net < 0L
+                Person(
+                    name = name,
+                    sub = if (owes) "te debe" else "le debes",
+                    amount = (if (owes) "+" else "−") + Calc.formatAmount(kotlin.math.abs(net) / 100.0),
+                    positive = owes,
+                    initials = initialsOf(name),
+                    tone = if (owes) AvatarTone.Pos else AvatarTone.Neg,
+                )
+            }
+    }
+
+    /** Hero Gastos: tu saldo neto + totales que te deben / debes (desde las transferencias sugeridas). */
+    private fun gastosHero(movements: List<Movement>): GastosHero {
+        val balances = SharedBalances.compute(movements)
+        val transfers = SettleSuggestions.compute(balances)
+        val owed = transfers.filter { it.toId == PersonRef.ME }.sumOf { it.amount.cents }
+        val owe = transfers.filter { it.fromId == PersonRef.ME }.sumOf { it.amount.cents }
+        val net = owed - owe
+        return GastosHero(
+            netLabel = (if (net >= 0) "+" else "−") + Calc.formatAmount(kotlin.math.abs(net) / 100.0),
+            owedLabel = Calc.formatAmount(owed / 100.0),
+            oweLabel = Calc.formatAmount(owe / 100.0),
+            positive = net >= 0,
+        )
+    }
+
+    /** Total "por cobrar": suma del reembolso vivo de TODOS los pendientes (sin ventana de periodo). */
+    private fun pendingReturns(movements: List<Movement>, percent: Int): PendingReturnsUi? {
+        val pending = movements.filter { it.returnStatus == ReturnStatus.Pending }
+        if (pending.isEmpty()) return null
+        val total = ReturnCalc.pendingTotal(pending, percent)
+        return PendingReturnsUi(
+            totalLabel = Calc.formatAmount(total.major),
+            caption = "${pending.size} ${if (pending.size == 1) "movimiento" else "movimientos"} por devolver · $percent%",
+        )
+    }
+
+    /** Activa el espacio Personal y cierra el selector. */
+    fun onSelectPersonal() {
+        spaceRepository.selectPersonal()
         menu.update { it.copy(sheet = DashboardSheet.None) }
+    }
+
+    /** Activa un espacio de Gastos por id y cierra el selector. */
+    fun onSelectSpace(id: String) {
+        spaceRepository.selectSpace(id)
+        menu.update { it.copy(sheet = DashboardSheet.None) }
+    }
+
+    /** Restaura un espacio archivado. */
+    fun onUnarchiveSpace(id: String) {
+        viewModelScope.launch { spaceRepository.unarchive(id) }
     }
 
     // ---- Salir / archivar grupo ----
     fun onLeaveStart() = menu.update { it.copy(sheet = DashboardSheet.None, leaveStep = LeaveStep.Settle) }
-    fun onLeaveAdvance() = menu.update {
-        it.copy(leaveStep = when (it.leaveStep) {
-            LeaveStep.Settle -> LeaveStep.Confirm
-            LeaveStep.Confirm -> LeaveStep.Done
-            else -> it.leaveStep
-        })
+    fun onLeaveAdvance() {
+        val step = menu.value.leaveStep
+        if (step == LeaveStep.Confirm) {
+            // Confirmar archiva el espacio activo (vuelve a Personal por construcción).
+            val id = spaceRepository.activeSpace.value.id
+            if (id.isNotEmpty()) viewModelScope.launch { spaceRepository.archive(id) }
+        }
+        menu.update {
+            it.copy(leaveStep = when (it.leaveStep) {
+                LeaveStep.Settle -> LeaveStep.Confirm
+                LeaveStep.Confirm -> LeaveStep.Done
+                else -> it.leaveStep
+            })
+        }
     }
     fun onLeaveClose() = menu.update { it.copy(leaveStep = LeaveStep.None) }
 

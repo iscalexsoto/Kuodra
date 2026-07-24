@@ -39,8 +39,10 @@ import com.arenacun.kuodra.R
 import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.BudgetFrequency
 import com.arenacun.kuodra.domain.model.DateLabels
-import com.arenacun.kuodra.domain.model.Person
+import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SpaceSettings
+import com.arenacun.kuodra.domain.model.initialsOf
+import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.domain.model.ThemeMode
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.component.BackCircle
@@ -68,6 +70,9 @@ fun SettingsScreen(
 
     LaunchedEffect(Unit) {
         viewModel.signedOut.collect { onSignedOut() }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.closed.collect { onBack() }
     }
 
     val settings = state.settings ?: return
@@ -103,20 +108,11 @@ fun SettingsScreen(
         when (state.useCase) {
             UseCase.Personal -> {
                 settings.budget?.let { BudgetSection(c, it, viewModel) }
+                settings.budget?.let { ReturnsSection(c, it.returnPercent, viewModel) }
             }
             UseCase.Gastos -> {
-                MembersSection(c, "MIEMBROS", settings.members, viewModel)
+                MembersSection(c, "MIEMBROS", state.contacts, viewModel)
                 ReminderRow(c, "Recordatorio de liquidación", settings.reminderEnabled, viewModel::onToggleReminder)
-            }
-            UseCase.Caja -> {
-                SectionLabel(c, "FONDO INICIAL")
-                Card(c) {
-                    TapRow(c, "Monto inicial", settings.fund?.initial ?: "$0") {
-                        viewModel.onOpenCalc(CalcTarget.Fund)
-                    }
-                }
-                MembersSection(c, "AUTORIZADOS", settings.members, viewModel)
-                ReminderRow(c, "Recordatorio de reposición", settings.reminderEnabled, viewModel::onToggleReminder)
             }
         }
 
@@ -185,6 +181,20 @@ fun SettingsScreen(
                 }
             }
         }
+
+        // Archivar espacio (Gastos): lo guarda sin borrar y vuelve a Personal.
+        if (state.useCase == UseCase.Gastos) {
+            SectionLabel(c, "ESPACIO")
+            Card(c) {
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = viewModel::onArchiveSpace)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Archivar espacio", style = Kuodra.type.body, color = c.neg, modifier = Modifier.weight(1f))
+                }
+            }
+        }
     }
 
     // ===== Overlays =====
@@ -192,7 +202,7 @@ fun SettingsScreen(
         androidx.compose.ui.window.Dialog(onDismissRequest = viewModel::onDismissCalc) {
             KuodraCalculator(
                 state = state.calc,
-                title = if (state.calcTarget == CalcTarget.Budget) "MONTO DEL PRESUPUESTO" else "MONTO DEL FONDO",
+                title = "MONTO DEL PRESUPUESTO",
                 confirmLabel = "Confirmar monto",
                 onKey = viewModel::onCalcKey,
                 onConfirm = viewModel::onConfirmCalc,
@@ -307,6 +317,37 @@ private fun BudgetSection(c: KuodraColors, budget: BudgetConfig, viewModel: Sett
             "El cierre manual del periodo está disponible desde el menú ··· del dashboard.",
             Modifier.padding(top = 12.dp),
         )
+    }
+}
+
+/** Devoluciones (Personal): editor del % global a devolver de los movimientos "Por devolver". */
+@Composable
+private fun ReturnsSection(c: KuodraColors, returnPercent: Int, viewModel: SettingsViewModel) {
+    Card(c, Modifier.padding(top = 12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                SettingIcon(c, R.drawable.ic_credit_card)
+                Column(Modifier.weight(1f)) {
+                    Text("Devoluciones", style = Kuodra.type.heading, color = c.ink)
+                    Text(
+                        "Los movimientos por devolver usan este % en vivo; al marcarlos devueltos, el % se congela en cada movimiento.",
+                        style = Kuodra.type.caption, color = c.ink3,
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
+            }
+            Box(Modifier.fillMaxWidth().padding(vertical = 16.dp).height(1.dp).background(c.line))
+            Text("PORCENTAJE A DEVOLVER", style = Kuodra.type.overline, color = c.ink3,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 13.dp))
+            BigStepper(
+                c, returnPercent.toString(), "% del gasto",
+                { viewModel.onReturnPercentDelta(-5) }, { viewModel.onReturnPercentDelta(5) },
+            )
+        }
     }
 }
 
@@ -538,7 +579,7 @@ private fun PencilIcon(size: androidx.compose.ui.unit.Dp, color: Color) {
 }
 
 @Composable
-private fun MembersSection(c: KuodraColors, label: String, members: List<Person>, viewModel: SettingsViewModel) {
+private fun MembersSection(c: KuodraColors, label: String, members: List<SpacePerson>, viewModel: SettingsViewModel) {
     SectionLabel(c, label)
     Card(c) {
         Column(Modifier.fillMaxWidth()) {
@@ -549,10 +590,11 @@ private fun MembersSection(c: KuodraColors, label: String, members: List<Person>
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ToneAvatar(p.initials, p.tone, size = 36.dp)
+                    ToneAvatar(initialsOf(p.name), toneForName(p.name), size = 36.dp)
                     Column(Modifier.weight(1f)) {
                         Text(p.name, style = Kuodra.type.body, color = c.ink)
-                        Text(p.sub, style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(top = 1.dp))
+                        Text(p.phone.ifBlank { "Sin WhatsApp" }, style = Kuodra.type.caption, color = c.ink3,
+                            modifier = Modifier.padding(top = 1.dp))
                     }
                     Chevron(7.dp, c.ink3, degrees = 90f)
                 }
@@ -590,13 +632,13 @@ private fun ReminderRow(c: KuodraColors, label: String, enabled: Boolean, onTogg
 @Composable
 private fun ContactSheet(c: KuodraColors, draft: ContactDraft, viewModel: SettingsViewModel) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
-        Text(if (draft.original == null) "Agregar contacto" else "Editar contacto",
+        Text(if (draft.id == null) "Agregar contacto" else "Editar contacto",
             style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(bottom = 12.dp))
         SheetField(c, "NOMBRE", draft.name, "Nombre del contacto", viewModel::onContactName)
         Box(Modifier.height(10.dp))
         SheetField(c, "WHATSAPP (OPCIONAL)", draft.whatsapp, "+52 …", viewModel::onContactWhatsapp)
         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (draft.original != null) {
+            if (draft.id != null) {
                 Box(
                     Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.negTint)
                         .clickable(onClick = viewModel::onDeleteContact).padding(vertical = 15.dp),
@@ -658,19 +700,6 @@ private fun Card(c: KuodraColors, modifier: Modifier = Modifier, content: @Compo
 }
 
 @Composable
-private fun TapRow(c: KuodraColors, label: String, value: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
-        Text(value, style = Kuodra.type.heading, color = c.ink)
-        Box(Modifier.width(8.dp))
-        Chevron(7.dp, c.ink3, degrees = 90f)
-    }
-}
-
-@Composable
 private fun KToggle(c: KuodraColors, on: Boolean, onToggle: () -> Unit) {
     Box(
         Modifier.width(46.dp).height(28.dp).clip(Kuodra.shape.pill)
@@ -692,11 +721,9 @@ private fun Divider(c: KuodraColors) {
 private fun nameLabel(useCase: UseCase): String = when (useCase) {
     UseCase.Personal -> "NOMBRE"
     UseCase.Gastos -> "NOMBRE DEL GRUPO"
-    UseCase.Caja -> "NOMBRE DEL FONDO"
 }
 
 private fun titleLabel(useCase: UseCase): String = when (useCase) {
     UseCase.Personal -> "Ajustes"
     UseCase.Gastos -> "Ajustes del grupo"
-    UseCase.Caja -> "Ajustes del fondo"
 }

@@ -1,11 +1,13 @@
 package com.arenacun.kuodra.presentation.feature.onboarding
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.terminologyFor
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class CreateSpaceViewModel(
     private val useCase: UseCase,
@@ -22,6 +24,6 @@ class CreateSpaceViewModel(
 
     fun create() {
         val finalName = _name.value.ifBlank { terminologyFor(useCase).groupName }
-        spaceRepository.createSpace(useCase, finalName)
+        viewModelScope.launch { spaceRepository.createSpace(finalName) }
     }
 }

@@ -5,10 +5,14 @@ import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.DateLabels
 import com.arenacun.kuodra.domain.model.Movement
+import com.arenacun.kuodra.domain.model.PersonRef
+import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.adjustmentOf
+import com.arenacun.kuodra.domain.model.initialsOf
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.domain.usecase.MovementGroup
+import com.arenacun.kuodra.domain.usecase.ReturnCalc
 import java.time.LocalDate
 
 /**
@@ -33,6 +37,12 @@ data class MovementUi(
     val items: List<MovementItemUi>,
     /** "Ajuste" (total no detallado) formateado, o null si el movimiento no tiene desglose. */
     val adjustment: String?,
+    /** Estado de devolución (Personal); [ReturnStatus.None] = no participa. */
+    val returnStatus: ReturnStatus,
+    /** "Por devolver (75%)" / "Devuelto (70%)", o null si no participa. */
+    val returnLabel: String?,
+    /** Monto a devolver formateado (vivo si Pending, congelado si Returned), o null. */
+    val returnAmountLabel: String?,
 )
 
 /** Reparto de un movimiento dividido entre varias personas. */
@@ -44,31 +54,57 @@ data class MovementItemUi(val concept: String, val amount: String)
 /** Grupo de día para "Ver todo", ya proyectado a UI. */
 data class MovementGroupUi(val header: String, val movements: List<MovementUi>)
 
-/** Deriva la proyección de UI a partir del catálogo de categorías y el caso de uso. */
+/**
+ * Deriva la proyección de UI. [persons] resuelve id → nombre para los pagadores/división de Gastos
+ * ([PersonRef.ME] siempre es "Tú"; un id ausente se pinta "(eliminado)").
+ */
 fun Movement.toUi(
     categories: Map<String, Category>,
     useCase: UseCase,
     today: LocalDate,
+    returnPercent: Int = ReturnCalc.DEFAULT_RETURN_PERCENT,
+    persons: Map<String, String> = emptyMap(),
 ): MovementUi {
     val cat = categories[categoryId] ?: Category.byId(categoryId)
-    val byVerb = payer?.let {
-        when (useCase) {
-            UseCase.Gastos -> if (it == "Tú") "Pagaste" else "Pagó"
-            UseCase.Caja -> if (it == "Tú") "Reportaste" else "Reportó"
-            UseCase.Personal -> null
-        }
+    fun nameOf(id: String): String = if (id == PersonRef.ME) "Tú" else persons[id] ?: "(eliminado)"
+
+    val by: String?
+    val byVerb: String?
+    when {
+        useCase != UseCase.Gastos || payers.isEmpty() -> { by = null; byVerb = null }
+        payers.size == 1 && payers.first().personId == PersonRef.ME -> { by = "Tú"; byVerb = "Pagaste" }
+        payers.size == 1 -> { by = nameOf(payers.first().personId); byVerb = "Pagó" }
+        else -> { by = payers.joinToString(", ") { nameOf(it.personId) }; byVerb = "Pagaron" }
     }
-    val perHead = if (splitNames.isNotEmpty()) Calc.formatAmount(amount.major / splitNames.size) else null
-    val meta = buildString {
-        if (payer != null && byVerb != null) append("$byVerb $payer · ")
-        append(DateLabels.dayMonth(date))
+    val payerMeta = when {
+        byVerb == null -> null
+        payers.size == 1 -> "$byVerb $by"
+        else -> "Pagaron ${payers.size}"
     }
-    val shares = splitNames.map { name ->
-        SplitShare(name, if (name == "Tú") "T" else name.take(1), perHead.orEmpty(), toneForName(name))
+    val meta = listOfNotNull(payerMeta, DateLabels.dayMonth(date)).joinToString(" · ")
+
+    val shares = splits.map { s ->
+        val name = nameOf(s.personId)
+        SplitShare(name, initialsOf(name), Calc.formatAmount(s.share.major), toneForName(name))
     }
+    // "c/u" solo tiene sentido si todas las partes son iguales (reparto equitativo).
+    val perHead = splits.map { it.share.cents }.distinct().singleOrNull()
+        ?.let { Calc.formatAmount(it / 100.0) }
     val itemsUi = items.map { MovementItemUi(it.concept, Calc.formatAmount(it.amount.major)) }
     val adjustmentStr = if (items.isNotEmpty())
         Calc.formatAmount(adjustmentOf(amount, items).major) else null
+    val stampedPercent = returnPercent.takeIf { returnStatus == ReturnStatus.Pending }
+        ?: this.returnPercent ?: ReturnCalc.DEFAULT_RETURN_PERCENT
+    val returnLabel = when (returnStatus) {
+        ReturnStatus.Pending -> "Por devolver ($returnPercent%)"
+        ReturnStatus.Returned -> "Devuelto ($stampedPercent%)"
+        ReturnStatus.None -> null
+    }
+    val returnAmount = when (returnStatus) {
+        ReturnStatus.Pending -> ReturnCalc.returnAmount(this, returnPercent)
+        ReturnStatus.Returned -> ReturnCalc.returnedAmount(this)
+        ReturnStatus.None -> null
+    }
     return MovementUi(
         id = id,
         title = title.ifBlank { cat.name },
@@ -78,16 +114,25 @@ fun Movement.toUi(
         catName = cat.name,
         tone = cat.tone,
         dateStr = DateLabels.longLabel(date, today),
-        by = payer,
+        by = by,
         byVerb = byVerb,
         splitShares = shares,
         perHead = perHead,
         note = note,
         items = itemsUi,
         adjustment = adjustmentStr,
+        returnStatus = returnStatus,
+        returnLabel = returnLabel,
+        returnAmountLabel = returnAmount?.let { Calc.formatAmount(it.major) },
     )
 }
 
 /** Proyecta un grupo de día completo a UI. */
-fun MovementGroup.toUi(categories: Map<String, Category>, useCase: UseCase, today: LocalDate): MovementGroupUi =
-    MovementGroupUi(header, movements.map { it.toUi(categories, useCase, today) })
+fun MovementGroup.toUi(
+    categories: Map<String, Category>,
+    useCase: UseCase,
+    today: LocalDate,
+    returnPercent: Int = ReturnCalc.DEFAULT_RETURN_PERCENT,
+    persons: Map<String, String> = emptyMap(),
+): MovementGroupUi =
+    MovementGroupUi(header, movements.map { it.toUi(categories, useCase, today, returnPercent, persons) })

@@ -37,37 +37,54 @@ class DashboardViewModelTest {
     private fun movement(id: String) =
         Movement(id, Money.ofMajor(10.0), "otro", id)
 
-    private class FakeSpaceRepository : SpaceRepository {
-        override val activeSpace: StateFlow<Space> = MutableStateFlow(Space(UseCase.Gastos))
-        override fun selectUseCase(useCase: UseCase) = Unit
-        override fun createSpace(useCase: UseCase, name: String) = Unit
+    private class FakeSpaceRepository(useCase: UseCase = UseCase.Gastos) : SpaceRepository {
+        private val active = if (useCase == UseCase.Personal) Space.PERSONAL
+            else Space(id = "s1", useCase = UseCase.Gastos, name = "Casa")
+        override val activeSpace: StateFlow<Space> = MutableStateFlow(active)
+        override val spaces: Flow<List<Space>> = MutableStateFlow(emptyList())
+        override fun selectPersonal() = Unit
+        override fun selectSpace(id: String) = Unit
+        override suspend fun createSpace(name: String): Space = active
+        override suspend fun rename(id: String, name: String) = Unit
+        override suspend fun setReminder(id: String, enabled: Boolean) = Unit
+        override suspend fun archive(id: String) = Unit
+        override suspend fun unarchive(id: String) = Unit
         override suspend fun isConfigured(): Boolean = true
     }
 
     private class FakeMovementRepository(initial: List<Movement>) : MovementRepository {
         private val movements = MutableStateFlow(initial)
-        override fun movements(useCase: UseCase): Flow<List<Movement>> = movements.asStateFlow()
-        override suspend fun movement(useCase: UseCase, id: String): Movement? = movements.value.find { it.id == id }
-        override suspend fun add(useCase: UseCase, movement: Movement) { movements.update { it + movement } }
-        override suspend fun update(useCase: UseCase, movement: Movement) {
+        override fun movements(spaceId: String): Flow<List<Movement>> = movements.asStateFlow()
+        override suspend fun movement(id: String): Movement? = movements.value.find { it.id == id }
+        override suspend fun add(movement: Movement) { movements.update { it + movement } }
+        override suspend fun update(movement: Movement) {
             movements.update { list -> list.map { if (it.id == movement.id) movement else it } }
         }
-        override suspend fun delete(useCase: UseCase, id: String) {
+        override suspend fun delete(id: String) {
             movements.update { list -> list.filterNot { it.id == id } }
         }
     }
 
     private class FakeSummaryRepository : SummaryRepository {
-        override fun people(useCase: UseCase): List<Person> = emptyList()
         override fun categories(): List<Category> = emptyList()
     }
 
-    private class FakeSettingsRepository : SettingsRepository {
-        override fun settings(useCase: UseCase): StateFlow<SpaceSettings> =
-            MutableStateFlow(SpaceSettings(name = "", members = emptyList(), budget = null, fund = null, reminderEnabled = false))
-        override fun update(useCase: UseCase, settings: SpaceSettings) = Unit
-        override fun history(useCase: UseCase): List<SettlementRecord> = emptyList()
-        override fun historyEntry(useCase: UseCase, id: String): SettlementRecord? = null
+    private class FakePersonRepository : com.arenacun.kuodra.domain.repository.PersonRepository {
+        override fun persons(spaceId: String): Flow<List<com.arenacun.kuodra.domain.model.SpacePerson>> =
+            MutableStateFlow(emptyList())
+        override suspend fun add(spaceId: String, person: com.arenacun.kuodra.domain.model.SpacePerson) = Unit
+        override suspend fun update(spaceId: String, person: com.arenacun.kuodra.domain.model.SpacePerson) = Unit
+        override suspend fun delete(id: String) = Unit
+    }
+
+    private class FakeSettingsRepository(
+        private val settings: SpaceSettings =
+            SpaceSettings(name = "", members = emptyList(), budget = null, reminderEnabled = false),
+    ) : SettingsRepository {
+        override fun settings(): StateFlow<SpaceSettings> = MutableStateFlow(settings)
+        override fun updateBudget(budget: com.arenacun.kuodra.domain.model.BudgetConfig) = Unit
+        override fun history(): List<SettlementRecord> = emptyList()
+        override fun historyEntry(id: String): SettlementRecord? = null
     }
 
     private class FakeSnapshotRepository : SnapshotRepository {
@@ -84,6 +101,7 @@ class DashboardViewModelTest {
             summaryRepository = FakeSummaryRepository(),
             settingsRepository = FakeSettingsRepository(),
             snapshotRepository = FakeSnapshotRepository(),
+            personRepository = FakePersonRepository(),
         )
 
         // Activa la suscripción (SharingStarted.WhileSubscribed).
@@ -91,10 +109,47 @@ class DashboardViewModelTest {
         advanceUntilIdle()
         assertEquals(2, viewModel.uiState.value.movements.size)
 
-        movementRepository.delete(UseCase.Gastos, "a")
+        movementRepository.delete("a")
         advanceUntilIdle()
 
         assertEquals(listOf("b"), viewModel.uiState.value.movements.map { it.id })
+        collectJob.cancel()
+    }
+
+    @Test
+    fun `pending returns total sums all pending and mark-all stamps the current percent`() = runTest {
+        val budget = com.arenacun.kuodra.domain.model.BudgetConfig.Default.copy(returnPercent = 50)
+        val settings = SpaceSettings(name = "", members = emptyList(), budget = budget, reminderEnabled = false)
+        val movements = FakeMovementRepository(
+            listOf(
+                Movement("a", Money.ofMajor(100.0), "otro", "a", returnStatus = com.arenacun.kuodra.domain.model.ReturnStatus.Pending),
+                Movement("b", Money.ofMajor(40.0), "otro", "b", returnStatus = com.arenacun.kuodra.domain.model.ReturnStatus.Pending),
+                Movement("c", Money.ofMajor(999.0), "otro", "c"),
+            ),
+        )
+        val viewModel = DashboardViewModel(
+            spaceRepository = FakeSpaceRepository(UseCase.Personal),
+            movementRepository = movements,
+            summaryRepository = FakeSummaryRepository(),
+            settingsRepository = FakeSettingsRepository(settings),
+            snapshotRepository = FakeSnapshotRepository(),
+            personRepository = FakePersonRepository(),
+        )
+
+        val collectJob = launch { viewModel.uiState.collect {} }
+        advanceUntilIdle()
+        // (100 + 40) * 50% = 70
+        assertEquals("$70", viewModel.uiState.value.pendingReturns?.totalLabel)
+
+        viewModel.onMarkAllReturned()
+        assertEquals(DashboardSheet.ReturnAllConfirm, viewModel.overlay.value.sheet)
+        viewModel.onMarkAllReturnedConfirm()
+        advanceUntilIdle()
+
+        assertEquals(DashboardSheet.ReturnAllDone, viewModel.overlay.value.sheet)
+        assertEquals(null, viewModel.uiState.value.pendingReturns)
+        val a = viewModel.uiState.value.movements.first { it.id == "a" }
+        assertEquals(com.arenacun.kuodra.domain.model.ReturnStatus.Returned, a.returnStatus)
         collectJob.cancel()
     }
 
@@ -106,6 +161,7 @@ class DashboardViewModelTest {
             summaryRepository = FakeSummaryRepository(),
             settingsRepository = FakeSettingsRepository(),
             snapshotRepository = FakeSnapshotRepository(),
+            personRepository = FakePersonRepository(),
         )
 
         viewModel.onOpenMenu()

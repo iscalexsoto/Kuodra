@@ -2,15 +2,23 @@ package com.arenacun.kuodra.presentation.feature.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.arenacun.kuodra.domain.model.AvatarTone
+import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.BudgetFrequency
 import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.CalcKey
 import com.arenacun.kuodra.domain.model.CalcState
 import com.arenacun.kuodra.domain.model.Person
+import com.arenacun.kuodra.domain.model.Session
+import com.arenacun.kuodra.domain.model.Space
+import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.ThemeMode
+import com.arenacun.kuodra.domain.model.UseCase
+import com.arenacun.kuodra.domain.model.initialsOf
+import com.arenacun.kuodra.domain.model.newId
+import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.domain.repository.AuthRepository
+import com.arenacun.kuodra.domain.repository.PersonRepository
 import com.arenacun.kuodra.domain.repository.PreferencesRepository
 import com.arenacun.kuodra.domain.repository.SettingsRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
@@ -24,18 +32,21 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Ajustes del espacio (pantalla adaptativa por caso de uso). Lee el [SettingsRepository] y
- * persiste el [SpaceSettings] completo tras cada edición; los overlays (calculadora de
- * monto, sheet de contacto) viven en el estado local.
+ * Ajustes del espacio (pantalla adaptativa por caso de uso). Personal usa el [SettingsRepository]
+ * (presupuesto); Gastos usa [SpaceRepository] (nombre, recordatorio, archivar) y [PersonRepository]
+ * (contactos con teléfono). Los overlays (calculadora, sheet de contacto) viven en el estado local.
  */
 class SettingsViewModel(
-    spaceRepository: SpaceRepository,
+    private val spaceRepository: SpaceRepository,
     private val settingsRepository: SettingsRepository,
+    private val personRepository: PersonRepository,
     private val preferences: PreferencesRepository,
     private val authRepository: AuthRepository,
 ) : ViewModel() {
 
-    val useCase = spaceRepository.activeSpace.value.useCase
+    private val activeSpace: Space = spaceRepository.activeSpace.value
+    val useCase = activeSpace.useCase
+    private val spaceId = activeSpace.id
 
     /** Correo de la sesión activa (para mostrar en la sección de cuenta). */
     val accountEmail: String? = authRepository.session.value?.email
@@ -43,6 +54,10 @@ class SettingsViewModel(
     /** Evento de una sola vez: la sesión se cerró ⇒ navegar al flujo de auth. */
     private val _signedOut = Channel<Unit>(Channel.BUFFERED)
     val signedOut = _signedOut.receiveAsFlow()
+
+    /** Evento de una sola vez: el espacio se archivó ⇒ volver al dashboard (ya en Personal). */
+    private val _closed = Channel<Unit>(Channel.BUFFERED)
+    val closed = _closed.receiveAsFlow()
 
     fun onSignOut() {
         viewModelScope.launch {
@@ -57,64 +72,102 @@ class SettingsViewModel(
         val editingContact: ContactDraft? = null,
         val editingName: String? = null,
         /** Copia de trabajo del presupuesto (Personal): edición síncrona sin esperar a Room. */
-        val budgetEdit: com.arenacun.kuodra.domain.model.BudgetConfig? = null,
+        val budgetEdit: BudgetConfig? = null,
     )
 
     private val local = MutableStateFlow(Local())
 
-    val uiState = combine(
-        settingsRepository.settings(useCase),
+    private data class Base(
+        val personal: SpaceSettings,
+        val space: Space,
+        val persons: List<SpacePerson>,
+        val theme: ThemeMode,
+        val session: Session?,
+    )
+
+    private val base = combine(
+        settingsRepository.settings(),
+        spaceRepository.activeSpace,
+        personRepository.persons(spaceId),
         preferences.themeMode,
         authRepository.session,
-        local,
-    ) { settings, themeMode, session, l ->
-        val merged = if (l.budgetEdit != null) settings.copy(budget = l.budgetEdit) else settings
-        SettingsUiState(useCase, merged, themeMode, l.calcTarget, l.calc, l.editingContact, session?.name.orEmpty(), l.editingName)
+    ) { personal, space, persons, theme, session -> Base(personal, space, persons, theme, session) }
+
+    val uiState = combine(base, local) { b, l ->
+        val settings = if (useCase == UseCase.Personal) {
+            if (l.budgetEdit != null) b.personal.copy(budget = l.budgetEdit) else b.personal
+        } else {
+            SpaceSettings(
+                name = b.space.displayName,
+                members = b.persons.map { it.toDisplay() },
+                budget = null,
+                reminderEnabled = b.space.reminderEnabled,
+            )
+        }
+        SettingsUiState(
+            useCase = useCase,
+            settings = settings,
+            contacts = b.persons,
+            themeMode = b.theme,
+            calcTarget = l.calcTarget,
+            calc = l.calc,
+            editingContact = l.editingContact,
+            accountName = b.session?.name.orEmpty(),
+            editingName = l.editingName,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState(useCase))
 
-    private fun current(): SpaceSettings = settingsRepository.settings(useCase).value
-    private fun save(settings: SpaceSettings) = settingsRepository.update(useCase, settings)
+    private fun SpacePerson.toDisplay(): Person =
+        Person(name, phone.ifBlank { "Sin WhatsApp" }, "", null, initialsOf(name), toneForName(name))
 
-    fun onNameChange(name: String) = save(current().copy(name = name))
-    fun onToggleReminder() = save(current().copy(reminderEnabled = !current().reminderEnabled))
+    // ---- Nombre / recordatorio (Gastos) ----
+    fun onNameChange(name: String) {
+        if (useCase == UseCase.Gastos) viewModelScope.launch { spaceRepository.rename(spaceId, name) }
+    }
+    fun onToggleReminder() {
+        if (useCase == UseCase.Gastos) viewModelScope.launch {
+            spaceRepository.setReminder(spaceId, !spaceRepository.activeSpace.value.reminderEnabled)
+        }
+    }
+    fun onArchiveSpace() {
+        if (useCase != UseCase.Gastos) return
+        viewModelScope.launch {
+            spaceRepository.archive(spaceId)
+            _closed.send(Unit)
+        }
+    }
+
     fun onSetThemeMode(mode: ThemeMode) = preferences.setThemeMode(mode)
 
     // ---- Presupuesto (Personal) ----
     fun onToggleBudget() = editBudget { it.copy(enabled = !it.enabled) }
     fun onSetFrequency(f: BudgetFrequency) = editBudget { it.copy(frequency = f) }
-
-    /** Día de la semana (Semanal): rota 1..7 con wraparound. */
-    fun onWeekdayDelta(delta: Int) = editBudget {
-        it.copy(weekday = ((it.weekday - 1 + delta).mod(7)) + 1)
-    }
-    /** Quincenal: primer día de ingreso (1..28). */
+    fun onWeekdayDelta(delta: Int) = editBudget { it.copy(weekday = ((it.weekday - 1 + delta).mod(7)) + 1) }
     fun onFirstDayDelta(delta: Int) = editBudget { it.copy(firstDay = (it.firstDay + delta).coerceIn(1, 28)) }
-    /** Quincenal: segundo día de ingreso (1..31). */
     fun onSecondDayDelta(delta: Int) = editBudget { it.copy(secondDay = (it.secondDay + delta).coerceIn(1, 31)) }
-    /** Mensual: día del mes de ingreso (1..31). */
     fun onMonthlyDayDelta(delta: Int) = editBudget { it.copy(monthlyDay = (it.monthlyDay + delta).coerceIn(1, 31)) }
-    /** Personalizado: cada N días (2..90). */
     fun onCustomIntervalDelta(delta: Int) = editBudget {
         it.copy(customInterval = (it.customInterval + delta).coerceIn(2, 90))
+    }
+    fun onReturnPercentDelta(delta: Int) = editBudget {
+        it.copy(returnPercent = (it.returnPercent + delta).coerceIn(5, 100))
     }
 
     /**
      * Edita el presupuesto sobre una copia de trabajo síncrona (evita perder taps rápidos por la
      * latencia de Room) y persiste el cambio.
      */
-    private fun editBudget(transform: (com.arenacun.kuodra.domain.model.BudgetConfig) -> com.arenacun.kuodra.domain.model.BudgetConfig) {
-        val base = local.value.budgetEdit ?: current().budget ?: return
+    private fun editBudget(transform: (BudgetConfig) -> BudgetConfig) {
+        val base = local.value.budgetEdit ?: settingsRepository.settings().value.budget ?: return
         val updated = transform(base)
         local.update { it.copy(budgetEdit = updated) }
-        save(current().copy(budget = updated))
+        settingsRepository.updateBudget(updated)
     }
 
-    // ---- Calculadora de monto (presupuesto / fondo) ----
+    // ---- Calculadora de monto (presupuesto) ----
     fun onOpenCalc(target: CalcTarget) = local.update {
-        // Precarga el monto actual del objetivo como valor a editar (fresh).
         val text = when (target) {
-            CalcTarget.Budget -> it.budgetEdit?.amount ?: current().budget?.amount
-            CalcTarget.Fund -> current().fund?.initial
+            CalcTarget.Budget -> it.budgetEdit?.amount ?: settingsRepository.settings().value.budget?.amount
         }
         it.copy(calcTarget = target, calc = Calc.initial(text?.let(Calc::parseAmount)))
     }
@@ -127,17 +180,16 @@ class SettingsViewModel(
             val amount = Calc.formatAmount(result)
             when (l.calcTarget) {
                 CalcTarget.Budget -> editBudget { it.copy(amount = amount) }
-                CalcTarget.Fund -> current().fund?.let { save(current().copy(fund = it.copy(initial = amount))) }
                 null -> {}
             }
         }
         local.update { it.copy(calcTarget = null) }
     }
 
-    // ---- Contactos / miembros ----
+    // ---- Contactos (Gastos) ----
     fun onAddContact() = local.update { it.copy(editingContact = ContactDraft(null, "", "")) }
-    fun onEditContact(person: Person) = local.update {
-        it.copy(editingContact = ContactDraft(person.name, person.name, ""))
+    fun onEditContact(person: SpacePerson) = local.update {
+        it.copy(editingContact = ContactDraft(person.id, person.name, person.phone))
     }
     fun onContactName(v: String) = local.update { it.copy(editingContact = it.editingContact?.copy(name = v)) }
     fun onContactWhatsapp(v: String) = local.update { it.copy(editingContact = it.editingContact?.copy(whatsapp = v)) }
@@ -146,21 +198,21 @@ class SettingsViewModel(
     fun onSaveContact() {
         val draft = local.value.editingContact ?: return
         if (draft.name.isBlank()) return
-        val s = current()
-        val members = if (draft.original == null) {
-            s.members + Person(draft.name, "Miembro", "", null, draft.name.take(1), AvatarTone.Tint)
-        } else {
-            s.members.map {
-                if (it.name == draft.original) it.copy(name = draft.name, initials = draft.name.take(1)) else it
-            }
+        val person = SpacePerson(
+            id = draft.id ?: newId(),
+            name = draft.name.trim(),
+            phone = draft.whatsapp.trim(),
+        )
+        viewModelScope.launch {
+            if (draft.id == null) personRepository.add(spaceId, person)
+            else personRepository.update(spaceId, person)
         }
-        save(s.copy(members = members))
         local.update { it.copy(editingContact = null) }
     }
 
     fun onDeleteContact() {
-        val orig = local.value.editingContact?.original ?: return
-        save(current().copy(members = current().members.filterNot { it.name == orig }))
+        val id = local.value.editingContact?.id ?: return
+        viewModelScope.launch { personRepository.delete(id) }
         local.update { it.copy(editingContact = null) }
     }
 

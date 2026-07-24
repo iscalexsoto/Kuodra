@@ -24,11 +24,12 @@ import com.arenacun.kuodra.presentation.feature.dashboard.DashboardScreen
 import com.arenacun.kuodra.presentation.feature.history.HistoryDetailScreen
 import com.arenacun.kuodra.presentation.feature.history.HistoryScreen
 import com.arenacun.kuodra.presentation.feature.movement.AddMovementScreen
+import com.arenacun.kuodra.presentation.feature.movement.AddMovementViewModel
 import com.arenacun.kuodra.presentation.feature.movement.MovementDetailScreen
+import com.arenacun.kuodra.presentation.feature.movement.SplitConfigScreen
 import com.arenacun.kuodra.presentation.feature.onboarding.CreateSpaceScreen
 import com.arenacun.kuodra.presentation.feature.onboarding.ModeScreen
 import com.arenacun.kuodra.presentation.feature.onboarding.NameScreen
-import com.arenacun.kuodra.presentation.feature.replenish.ReplenishScreen
 import com.arenacun.kuodra.presentation.feature.scan.ScanDraftViewModel
 import com.arenacun.kuodra.presentation.feature.scan.ScanTicketScreen
 import com.arenacun.kuodra.presentation.feature.settings.SettingsScreen
@@ -132,7 +133,6 @@ fun KuodraNavHost(
                 onSeeAllMovements = { navController.navigate(Destination.AllMovements) },
                 onOpenSettings = { navController.navigate(Destination.Settings) },
                 onSettle = { navController.navigate(Destination.Settle) },
-                onReplenish = { navController.navigate(Destination.Replenish) },
                 onOpenHistory = { navController.navigate(Destination.History) },
                 onCreateSpace = { useCase -> navController.navigate(Destination.CreateSpace(useCase)) },
             )
@@ -169,12 +169,6 @@ fun KuodraNavHost(
         }
         composable<Destination.Settle> {
             SettleScreen(
-                onBack = { navController.popBackStack() },
-                onDone = { navController.popBackStack() },
-            )
-        }
-        composable<Destination.Replenish> {
-            ReplenishScreen(
                 onBack = { navController.popBackStack() },
                 onDone = { navController.popBackStack() },
             )
@@ -219,7 +213,14 @@ fun KuodraNavHost(
                     draftViewModel = entry.sharedScanDraftViewModel(navController),
                     onBack = { navController.popBackStack() },
                     onSaved = { navController.popBackStack() },
-                    viewModel = koinViewModel { parametersOf(args.editId) },
+                    onOpenSplit = { navController.navigate(Destination.SplitConfig) },
+                    viewModel = entry.sharedAddMovementViewModel(navController, args.editId),
+                )
+            }
+            composable<Destination.SplitConfig> { entry ->
+                SplitConfigScreen(
+                    onBack = { navController.popBackStack() },
+                    viewModel = entry.sharedAddMovementViewModel(navController, null),
                 )
             }
         }
@@ -238,4 +239,18 @@ private fun NavBackStackEntry.sharedAuthViewModel(navController: NavHostControll
 private fun NavBackStackEntry.sharedScanDraftViewModel(navController: NavHostController): ScanDraftViewModel {
     val parentEntry = remember(this) { navController.getBackStackEntry<Destination.AddGraph>() }
     return koinViewModel(viewModelStoreOwner = parentEntry)
+}
+
+/**
+ * AddMovementViewModel compartido entre AddMovement y SplitConfig (scope = AddGraph). El [editId]
+ * solo se usa al crearlo (lo fija la primera pantalla del grafo, AddMovement); SplitConfig recibe
+ * la misma instancia ya creada, así que pasa null.
+ */
+@Composable
+private fun NavBackStackEntry.sharedAddMovementViewModel(
+    navController: NavHostController,
+    editId: String?,
+): AddMovementViewModel {
+    val parentEntry = remember(this) { navController.getBackStackEntry<Destination.AddGraph>() }
+    return koinViewModel(viewModelStoreOwner = parentEntry) { parametersOf(editId) }
 }

@@ -31,12 +31,13 @@ sealed interface Destination {
     @Serializable data object AddGraph : Destination
     /** Alta de movimiento; con [editId] carga un movimiento existente y guarda como edición. */
     @Serializable data class AddMovement(val editId: String? = null) : Destination
+    /** Pagadores + división de un gasto compartido (dentro del AddGraph; comparte el AddMovementViewModel). */
+    @Serializable data object SplitConfig : Destination
     @Serializable data class ScanTicket(val source: ScanSource) : Destination
     @Serializable data object AllMovements : Destination
     @Serializable data object Settings : Destination
     @Serializable data object Categories : Destination
     @Serializable data object Settle : Destination
-    @Serializable data object Replenish : Destination
     @Serializable data object History : Destination
     @Serializable data class HistoryDetail(val id: String) : Destination
 }

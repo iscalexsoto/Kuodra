@@ -72,8 +72,6 @@ fun ModeScreen(
                 "Empieza con tus gastos, agrega lo demás después", AvatarTone.Tint, "Yo", viewModel::onSelect)
             ModeCard(selectedMode, UseCase.Gastos, "Grupo compartido",
                 "Divide gastos con roomies, pareja o familia", AvatarTone.Pos, "○○", viewModel::onSelect)
-            ModeCard(selectedMode, UseCase.Caja, "Caja chica",
-                "Maneja el fondo de efectivo de tu negocio", AvatarTone.Warn, "$", viewModel::onSelect)
         }
 
         val chosen = selectedMode != null

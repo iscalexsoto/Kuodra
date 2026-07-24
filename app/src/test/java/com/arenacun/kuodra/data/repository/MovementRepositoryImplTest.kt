@@ -1,102 +1,93 @@
 package com.arenacun.kuodra.data.repository
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.emptyPreferences
-import com.arenacun.kuodra.data.local.KuodraSeedSource
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.arenacun.kuodra.data.local.SessionStore
 import com.arenacun.kuodra.data.local.db.MovementDao
 import com.arenacun.kuodra.data.local.db.MovementEntity
 import com.arenacun.kuodra.data.sync.SyncTrigger
 import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
-import com.arenacun.kuodra.domain.model.UseCase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 /**
- * Rama seed (Gastos/Caja) de [MovementRepositoryImpl]: `update` debe reemplazar por id
- * (no duplicar), tanto para movimientos añadidos como para los base del seed.
+ * [MovementRepositoryImpl] sobre Room: `add`/`update` hacen upsert `dirty` filtrado por espacio,
+ * y `delete` marca el tombstone. Fake DAO en memoria + `SessionStore` real sobre un DataStore temporal.
  */
 class MovementRepositoryImplTest {
 
-    private class StubMovementDao : MovementDao {
-        override fun observe(owner: String): Flow<List<MovementEntity>> = flowOf(emptyList())
-        override suspend fun find(id: String): MovementEntity? = null
-        override suspend fun dirtyRows(owner: String): List<MovementEntity> = emptyList()
+    @get:Rule
+    val tmp = TemporaryFolder()
+
+    private class FakeMovementDao(val rows: MutableList<MovementEntity> = mutableListOf()) : MovementDao {
+        override fun observe(owner: String): Flow<List<MovementEntity>> = flowOf(rows.filter { !it.deleted })
+        override fun observe(owner: String, space: String): Flow<List<MovementEntity>> =
+            flowOf(rows.filter { it.owner == owner && it.space == space && !it.deleted })
+        override suspend fun find(id: String): MovementEntity? = rows.find { it.id == id }
+        override suspend fun dirtyRows(owner: String): List<MovementEntity> = rows.filter { it.dirty }
         override suspend fun markSynced(id: String, remoteUpdated: String) = Unit
-        override suspend fun upsert(movement: MovementEntity) = Unit
-        override suspend fun softDelete(id: String, updatedAt: Long) = Unit
+        override suspend fun upsert(movement: MovementEntity) {
+            rows.removeAll { it.id == movement.id }; rows += movement
+        }
+        override suspend fun softDelete(id: String, updatedAt: Long) {
+            rows.replaceAll { if (it.id == id) it.copy(deleted = true, dirty = true) else it }
+        }
+        override suspend fun stampSettlement(ids: List<String>, settlementId: String, updatedAt: Long) {
+            rows.replaceAll { if (it.id in ids) it.copy(settlementId = settlementId, dirty = true) else it }
+        }
     }
 
-    private val emptyDataStore = object : DataStore<Preferences> {
-        override val data: Flow<Preferences> = flowOf(emptyPreferences())
-        override suspend fun updateData(
-            transform: suspend (t: Preferences) -> Preferences,
-        ): Preferences = emptyPreferences()
+    private suspend fun repositoryWithSession(dao: FakeMovementDao): MovementRepositoryImpl {
+        val dataStore = PreferenceDataStoreFactory.create { tmp.newFile("mov.preferences_pb") }
+        val session = SessionStore(dataStore)
+        session.save("tok", "u1", "u1@x.com", "U")
+        return MovementRepositoryImpl(dao, session, SyncTrigger.NoOp)
     }
 
-    private fun repository(seed: KuodraSeedSource = KuodraSeedSource()) = MovementRepositoryImpl(
-        seed = seed,
-        dao = StubMovementDao(),
-        sessionStore = SessionStore(emptyDataStore),
-        syncTrigger = SyncTrigger.NoOp,
-    )
+    private fun movement(id: String, spaceId: String, title: String = id) =
+        Movement(id = id, amount = Money(1000), categoryId = "otro", title = title, spaceId = spaceId)
 
     @Test
-    fun `update of a base seed movement replaces it without duplicating`() = runTest {
-        val seed = KuodraSeedSource()
-        val repo = repository(seed)
-        val base = seed.baseMovements(UseCase.Gastos).first()
+    fun `add upserts a dirty row filtered by space`() = runTest {
+        val dao = FakeMovementDao()
+        val repo = repositoryWithSession(dao)
 
-        repo.update(UseCase.Gastos, base.copy(title = "Editado", amount = Money(99900)))
+        repo.add(movement("g1", spaceId = "s1"))
 
-        val all = repo.movements(UseCase.Gastos).first()
-        val matches = all.filter { it.id == base.id }
-        assertEquals(1, matches.size)
-        assertEquals("Editado", matches.single().title)
-        assertEquals(99900L, matches.single().amount.cents)
-    }
-
-    @Test
-    fun `update of an added movement replaces it without duplicating`() = runTest {
-        val repo = repository()
-        val movement = Movement(id = "nuevo", amount = Money(1000), categoryId = "otro", title = "Café")
-        repo.add(UseCase.Gastos, movement)
-
-        repo.update(UseCase.Gastos, movement.copy(title = "Café con pan"))
-
-        val all = repo.movements(UseCase.Gastos).first()
-        val matches = all.filter { it.id == "nuevo" }
-        assertEquals(1, matches.size)
-        assertEquals("Café con pan", matches.single().title)
+        assertEquals(listOf("g1"), repo.movements("s1").first().map { it.id })
+        assertEquals(emptyList<String>(), repo.movements("").first().map { it.id })
+        assertEquals(true, dao.rows.first { it.id == "g1" }.dirty)
     }
 
     @Test
-    fun `movement returns the edited version`() = runTest {
-        val seed = KuodraSeedSource()
-        val repo = repository(seed)
-        val base = seed.baseMovements(UseCase.Caja).first()
+    fun `update replaces the row by id`() = runTest {
+        val dao = FakeMovementDao()
+        val repo = repositoryWithSession(dao)
+        repo.add(movement("g1", spaceId = "s1"))
 
-        repo.update(UseCase.Caja, base.copy(title = "Corregido"))
+        repo.update(movement("g1", spaceId = "s1", title = "Editado"))
 
-        assertEquals("Corregido", repo.movement(UseCase.Caja, base.id)?.title)
+        val all = repo.movements("s1").first().filter { it.id == "g1" }
+        assertEquals(1, all.size)
+        assertEquals("Editado", all.single().title)
+        assertEquals("Editado", repo.movement("g1")?.title)
     }
 
     @Test
-    fun `delete after edit still removes the movement`() = runTest {
-        val seed = KuodraSeedSource()
-        val repo = repository(seed)
-        val base = seed.baseMovements(UseCase.Gastos).first()
-        repo.update(UseCase.Gastos, base.copy(title = "Editado"))
+    fun `delete marks the tombstone and drops it from the flow`() = runTest {
+        val dao = FakeMovementDao()
+        val repo = repositoryWithSession(dao)
+        repo.add(movement("g1", spaceId = "s1"))
 
-        repo.delete(UseCase.Gastos, base.id)
+        repo.delete("g1")
 
-        assertNull(repo.movements(UseCase.Gastos).first().find { it.id == base.id })
+        assertNull(repo.movements("s1").first().find { it.id == "g1" })
     }
 }

@@ -15,13 +15,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.component.BackCircle
@@ -38,8 +41,14 @@ fun SettleScreen(
 ) {
     val c = Kuodra.colors
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) { viewModel.done.collect { onDone() } }
+    LaunchedEffect(Unit) {
+        viewModel.whatsapp.collect { url ->
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().background(c.screenBg).verticalScroll(rememberScrollState())
@@ -76,7 +85,8 @@ fun SettleScreen(
         Column(
             Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface).border(1.dp, c.line, Kuodra.shape.xl),
         ) {
-            state.people.forEachIndexed { i, p ->
+            state.people.forEachIndexed { i, row ->
+                val p = row.person
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 13.dp),
                     horizontalArrangement = Arrangement.spacedBy(13.dp),
@@ -89,6 +99,13 @@ fun SettleScreen(
                     }
                     Text(p.amount, style = Kuodra.type.heading,
                         color = when (p.positive) { true -> c.pos; false -> c.neg; null -> c.ink })
+                    if (row.hasPhone) {
+                        Box(
+                            Modifier.clip(Kuodra.shape.md).background(c.posTint)
+                                .clickable { viewModel.onWhatsApp(row.personId) }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) { Text("WhatsApp", style = Kuodra.type.caption, color = c.pos) }
+                    }
                 }
                 if (i < state.people.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
             }

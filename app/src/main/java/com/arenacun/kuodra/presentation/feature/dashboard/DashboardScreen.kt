@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.Person
+import com.arenacun.kuodra.domain.model.Space
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.scan.ScanSource
 import com.arenacun.kuodra.presentation.feature.movement.MovementUi
@@ -59,7 +60,6 @@ fun DashboardScreen(
     onSeeAllMovements: () -> Unit,
     onOpenSettings: () -> Unit,
     onSettle: () -> Unit,
-    onReplenish: () -> Unit,
     onOpenHistory: () -> Unit,
     onCreateSpace: (UseCase) -> Unit,
     viewModel: DashboardViewModel = koinViewModel(),
@@ -67,6 +67,7 @@ fun DashboardScreen(
     val c = Kuodra.colors
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val overlay by viewModel.overlay.collectAsStateWithLifecycle()
+    val spaces by viewModel.spaces.collectAsStateWithLifecycle()
     val t = state.space.terminology
     val uc = state.useCase
 
@@ -112,12 +113,16 @@ fun DashboardScreen(
                     .padding(horizontal = 16.dp).padding(top = 16.dp, bottom = 96.dp),
             ) {
                 when (uc) {
-                    UseCase.Gastos -> ReminderBanner(c)
-                    UseCase.Caja -> LowFundBanner(c, onReplenish)
+                    UseCase.Gastos -> if (state.space.reminderEnabled) ReminderBanner(c)
                     UseCase.Personal -> {}
                 }
 
-                DashboardHero(c, uc, t.heroLabel, state.personalHero)
+                DashboardHero(c, uc, t.heroLabel, state.personalHero, state.gastosHero)
+
+                state.pendingReturns?.let { pending ->
+                    Spacer(Modifier.height(12.dp))
+                    PendingReturnsCard(c, pending, viewModel::onMarkAllReturned)
+                }
 
                 if (uc != UseCase.Personal) {
                     Spacer(Modifier.height(12.dp))
@@ -129,7 +134,6 @@ fun DashboardScreen(
                     title = when (uc) {
                         UseCase.Personal -> "Por categoría"
                         UseCase.Gastos -> "Quién debe a quién"
-                        UseCase.Caja -> "Movimientos por persona"
                     },
                 )
                 if (uc == UseCase.Personal) {
@@ -171,17 +175,13 @@ fun DashboardScreen(
         DashboardSheet.Spaces -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             SpacesSheet(
                 c = c,
-                current = uc,
+                current = state.space,
+                spaces = spaces,
                 onClose = viewModel::onCloseSheet,
-                onSelectUseCase = viewModel::onSelectUseCase,
-                onCreateSpace = viewModel::onOpenCreateSpace,
-            )
-        }
-        DashboardSheet.CreateSpace -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            CreateSpaceSheet(
-                c = c,
-                onClose = viewModel::onCloseSheet,
-                onPick = { useCase -> viewModel.onCloseSheet(); onCreateSpace(useCase) },
+                onSelectPersonal = viewModel::onSelectPersonal,
+                onSelectSpace = viewModel::onSelectSpace,
+                onUnarchiveSpace = viewModel::onUnarchiveSpace,
+                onCreateSpace = { viewModel.onCloseSheet(); onCreateSpace(UseCase.Gastos) },
             )
         }
         DashboardSheet.Menu -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
@@ -192,22 +192,27 @@ fun DashboardScreen(
                 onShare = viewModel::onShare,
                 onOpenSettings = { viewModel.onCloseSheet(); onOpenSettings() },
                 onClosePeriod = viewModel::onClosePeriod,
-                onReplenish = { viewModel.onCloseSheet(); onReplenish() },
                 onOpenHistory = { viewModel.onCloseSheet(); onOpenHistory() },
                 onLeave = viewModel::onLeaveStart,
             )
         }
         DashboardSheet.Share -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            ShareSheet(c, uc, onClose = viewModel::onCloseSheet, onShare = viewModel::onShareConfirm)
+            ShareSheet(c, onClose = viewModel::onCloseSheet, onShare = viewModel::onShareConfirm)
         }
         DashboardSheet.Shared -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            ShareDoneSheet(c, uc, onClose = viewModel::onCloseSheet)
+            ShareDoneSheet(c, onClose = viewModel::onCloseSheet)
         }
         DashboardSheet.PCloseConfirm -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             ClosePeriodSheet(c, state.personalHero, onClose = viewModel::onCloseSheet, onConfirm = viewModel::onClosePeriodConfirm)
         }
         DashboardSheet.PClosed -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             ClosePeriodDoneSheet(c, onClose = viewModel::onCloseSheet)
+        }
+        DashboardSheet.ReturnAllConfirm -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
+            ReturnAllConfirmSheet(c, state.pendingReturns, onClose = viewModel::onCloseSheet, onConfirm = viewModel::onMarkAllReturnedConfirm)
+        }
+        DashboardSheet.ReturnAllDone -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
+            ReturnAllDoneSheet(c, onClose = viewModel::onCloseSheet)
         }
         DashboardSheet.AddOptions -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             AddOptionsSheetContent(
@@ -223,38 +228,58 @@ fun DashboardScreen(
 }
 
 /**
- * Selector "Tus espacios": Personal primero, luego los demás espacios (grupos / caja chica).
- * Resalta el espacio actual y permite crear uno nuevo. Réplica del sheet `spaces` del prototipo.
+ * Selector "Tus espacios": Personal primero, luego los grupos de Gastos vigentes, una sección de
+ * archivados (restaurables) y la acción de crear uno nuevo. Resalta el espacio actual.
  */
 @Composable
 private fun SpacesSheet(
     c: KuodraColors,
-    current: UseCase,
+    current: Space,
+    spaces: List<Space>,
     onClose: () -> Unit,
-    onSelectUseCase: (UseCase) -> Unit,
+    onSelectPersonal: () -> Unit,
+    onSelectSpace: (String) -> Unit,
+    onUnarchiveSpace: (String) -> Unit,
     onCreateSpace: () -> Unit,
 ) {
+    val active = spaces.filterNot { it.archived }
+    val archived = spaces.filter { it.archived }
     Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
         SheetHeader(c, "Tus espacios", onClose)
         Column(Modifier.padding(horizontal = 16.dp)) {
-            UseCase.entries.forEach { option ->
-                val selected = option == current
-                Row(
-                    Modifier.fillMaxWidth().padding(bottom = 9.dp).clip(Kuodra.shape.lg)
-                        .background(if (selected) c.tint else c.surface)
-                        .border(1.5.dp, if (selected) c.primary else c.line, Kuodra.shape.lg)
-                        .clickable { onSelectUseCase(option) }
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(13.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    CategoryTag(spaceTag(option), spaceTone(option), size = 42.dp)
-                    Column(Modifier.weight(1f)) {
-                        Text(spaceTitle(option), style = Kuodra.type.heading, color = c.ink)
-                        Text(spaceListSub(option), style = Kuodra.type.caption, color = c.ink3,
-                            modifier = Modifier.padding(top = 1.dp))
-                    }
-                    if (selected) CheckCircle(c)
+            SpaceRow(
+                c = c,
+                tag = spaceTag(UseCase.Personal),
+                tone = spaceTone(UseCase.Personal),
+                title = spaceTitle(UseCase.Personal),
+                sub = spaceListSub(UseCase.Personal),
+                selected = current.useCase == UseCase.Personal,
+                onClick = onSelectPersonal,
+            )
+            active.forEach { space ->
+                SpaceRow(
+                    c = c,
+                    tag = space.displayName.take(2),
+                    tone = spaceTone(UseCase.Gastos),
+                    title = space.displayName,
+                    sub = "Grupo compartido",
+                    selected = current.id == space.id,
+                    onClick = { onSelectSpace(space.id) },
+                )
+            }
+            if (archived.isNotEmpty()) {
+                Text("ARCHIVADOS", style = Kuodra.type.overline, color = c.ink3,
+                    modifier = Modifier.padding(start = 4.dp, top = 6.dp, bottom = 8.dp))
+                archived.forEach { space ->
+                    SpaceRow(
+                        c = c,
+                        tag = space.displayName.take(2),
+                        tone = spaceTone(UseCase.Gastos),
+                        title = space.displayName,
+                        sub = "Archivado · toca para restaurar",
+                        selected = false,
+                        onClick = { onUnarchiveSpace(space.id) },
+                    )
                 }
             }
             Row(
@@ -275,52 +300,31 @@ private fun SpacesSheet(
     }
 }
 
-/**
- * Opciones de "Crear espacio": elige el tipo (grupo compartido o caja chica). Al elegir se
- * navega a la pantalla de nombrado, igual que en el onboarding.
- */
 @Composable
-private fun CreateSpaceSheet(
+private fun SpaceRow(
     c: KuodraColors,
-    onClose: () -> Unit,
-    onPick: (UseCase) -> Unit,
-) {
-    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-        SheetHeader(c, "Crear espacio", onClose)
-        Column(Modifier.padding(horizontal = 16.dp)) {
-            Text("Tu espacio Personal ya existe. ¿Qué más quieres agregar?",
-                style = Kuodra.type.caption, color = c.ink2,
-                modifier = Modifier.padding(start = 4.dp, bottom = 12.dp))
-            CreateSpaceOption(c, UseCase.Gastos, AvatarTone.Pos, "Grupo compartido",
-                "Divide gastos con roomies, pareja o familia", onPick)
-            Spacer(Modifier.height(9.dp))
-            CreateSpaceOption(c, UseCase.Caja, AvatarTone.Warn, "Caja chica",
-                "Maneja el fondo de efectivo de tu negocio", onPick)
-        }
-    }
-}
-
-@Composable
-private fun CreateSpaceOption(
-    c: KuodraColors,
-    useCase: UseCase,
+    tag: String,
     tone: AvatarTone,
     title: String,
     sub: String,
-    onPick: (UseCase) -> Unit,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clip(Kuodra.shape.lg).background(c.surface2)
-            .clickable { onPick(useCase) }
-            .padding(horizontal = 15.dp, vertical = 15.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.fillMaxWidth().padding(bottom = 9.dp).clip(Kuodra.shape.lg)
+            .background(if (selected) c.tint else c.surface)
+            .border(1.5.dp, if (selected) c.primary else c.line, Kuodra.shape.lg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CategoryTag(spaceTag(useCase), tone, size = 46.dp)
+        CategoryTag(tag, tone, size = 42.dp)
         Column(Modifier.weight(1f)) {
             Text(title, style = Kuodra.type.heading, color = c.ink)
             Text(sub, style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(top = 1.dp))
         }
+        if (selected) CheckCircle(c)
     }
 }
 
@@ -369,7 +373,6 @@ private fun SpaceMenu(
     onShare: () -> Unit,
     onOpenSettings: () -> Unit,
     onClosePeriod: () -> Unit,
-    onReplenish: () -> Unit,
     onOpenHistory: () -> Unit,
     onLeave: () -> Unit,
 ) {
@@ -379,13 +382,13 @@ private fun SpaceMenu(
             Modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // 1 · Compartir resumen/corte (grupo y caja)
+            // 1 · Compartir resumen (grupo)
             if (current != UseCase.Personal) {
                 MenuOptionRow(
                     c = c,
                     iconBg = c.posTint,
                     icon = { ShareGlyph(c.pos) },
-                    title = if (current == UseCase.Caja) "Compartir corte" else "Compartir resumen",
+                    title = "Compartir resumen",
                     sub = "Manda el resumen por WhatsApp o PDF",
                     onClick = onShare,
                 )
@@ -399,7 +402,6 @@ private fun SpaceMenu(
                 sub = when (current) {
                     UseCase.Personal -> "Presupuesto"
                     UseCase.Gastos -> "Nombre, contactos y categorías"
-                    UseCase.Caja -> "Nombre, responsable y contactos"
                 },
                 onClick = onOpenSettings,
             )
@@ -425,18 +427,7 @@ private fun SpaceMenu(
                 sub = "Periodos cerrados · reenviar o auditar",
                 onClick = onOpenHistory,
             )
-            // 5 · Reponer fondo (solo caja)
-            if (current == UseCase.Caja) {
-                MenuOptionRow(
-                    c = c,
-                    iconBg = c.warnTint,
-                    icon = { TrayGlyph(c.warn) },
-                    title = "Reponer fondo",
-                    sub = "Sube el saldo sin cerrar el periodo",
-                    onClick = onReplenish,
-                )
-            }
-            // 6 · Salir del grupo (solo grupo; con divisor y en rojo)
+            // 5 · Salir del grupo (solo grupo; con divisor y en rojo)
             if (current == UseCase.Gastos) {
                 Box(Modifier.fillMaxWidth().padding(vertical = 4.dp).height(1.dp).background(c.line))
                 MenuOptionRow(
@@ -512,18 +503,6 @@ private fun ClockGlyph(color: Color) {
     KIcon(R.drawable.ic_clock, 18.dp, color)
 }
 
-/** Cajón/bandeja (reponer fondo): rectángulo con ranura. */
-@Composable
-private fun TrayGlyph(color: Color) {
-    Box(
-        Modifier.size(width = 21.dp, height = 15.dp).border(2.dp, color, Kuodra.shape.sm),
-        contentAlignment = Alignment.TopCenter,
-    ) {
-        Box(Modifier.padding(top = 3.dp).size(width = 7.dp, height = 2.5.dp)
-            .clip(Kuodra.shape.pill).background(color))
-    }
-}
-
 /** Puerta con flecha hacia afuera (salir del grupo). */
 @Composable
 private fun ExitGlyph(color: Color) {
@@ -549,11 +528,11 @@ private fun ExitGlyph(color: Color) {
 
 // ---- Sheets disparados desde el menú ----
 
-/** Compartir resumen/corte: opciones PDF / WhatsApp (sin canal real, igual que el reshare). */
+/** Compartir resumen: opciones PDF / WhatsApp (sin canal real, igual que el reshare). */
 @Composable
-private fun ShareSheet(c: KuodraColors, current: UseCase, onClose: () -> Unit, onShare: () -> Unit) {
+private fun ShareSheet(c: KuodraColors, onClose: () -> Unit, onShare: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-        SheetHeader(c, if (current == UseCase.Caja) "Compartir corte" else "Compartir resumen", onClose)
+        SheetHeader(c, "Compartir resumen", onClose)
         Column(
             Modifier.padding(horizontal = 18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -575,7 +554,7 @@ private fun ShareButton(c: KuodraColors, label: String, onClick: () -> Unit) {
 
 /** Confirmación tras compartir. */
 @Composable
-private fun ShareDoneSheet(c: KuodraColors, current: UseCase, onClose: () -> Unit) {
+private fun ShareDoneSheet(c: KuodraColors, onClose: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 8.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -583,7 +562,7 @@ private fun ShareDoneSheet(c: KuodraColors, current: UseCase, onClose: () -> Uni
         Box(Modifier.size(56.dp).clip(Kuodra.shape.pill).background(c.posTint), contentAlignment = Alignment.Center) {
             Text("✓", style = Kuodra.type.displayAmount, color = c.pos)
         }
-        Text(if (current == UseCase.Caja) "Corte enviado" else "Resumen enviado",
+        Text("Resumen enviado",
             style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(top = 12.dp))
         Text("Se compartió el resumen del periodo.", style = Kuodra.type.caption, color = c.ink2,
             modifier = Modifier.padding(top = 4.dp))
@@ -732,27 +711,23 @@ private fun LeaveFlow(
 private fun spaceTitle(useCase: UseCase): String = when (useCase) {
     UseCase.Personal -> "Mis gastos"
     UseCase.Gastos -> "Casa Roma"
-    UseCase.Caja -> "Caja Changarro"
 }
 
 /** Subtítulo en el selector de espacios (réplica de `baseSpaces` del prototipo). */
 private fun spaceListSub(useCase: UseCase): String = when (useCase) {
     UseCase.Personal -> "Solo tú"
     UseCase.Gastos -> "4 miembros"
-    UseCase.Caja -> "Responsable"
 }
 
 private fun spaceTag(useCase: UseCase): String = when (useCase) {
     UseCase.Personal -> "Mi"
     UseCase.Gastos -> "Ca"
-    UseCase.Caja -> "Cj"
 }
 
-/** Tono de avatar por tipo de espacio (personal=tint, grupo=pos, caja=warn). */
+/** Tono de avatar por tipo de espacio (personal=tint, grupo=pos). */
 private fun spaceTone(useCase: UseCase): AvatarTone = when (useCase) {
     UseCase.Personal -> AvatarTone.Tint
     UseCase.Gastos -> AvatarTone.Pos
-    UseCase.Caja -> AvatarTone.Warn
 }
 
 @Composable
@@ -794,33 +769,7 @@ private fun ReminderBanner(c: KuodraColors) {
 }
 
 @Composable
-private fun LowFundBanner(c: KuodraColors, onReplenish: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(Kuodra.shape.lg).background(c.warnTint)
-            .border(1.dp, c.warn.copy(alpha = 0.25f), Kuodra.shape.lg)
-            .padding(horizontal = 15.dp, vertical = 13.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(36.dp).clip(Kuodra.shape.md).background(c.surface),
-            contentAlignment = Alignment.Center) {
-            Text("💵", style = Kuodra.type.caption, color = c.warn)
-        }
-        Column(Modifier.weight(1f)) {
-            Text("Tu caja está baja", style = Kuodra.type.caption, color = c.ink)
-            Text("Quedan $900 (18%) del fondo de $5,000",
-                style = Kuodra.type.caption, color = c.ink2, modifier = Modifier.padding(top = 1.dp))
-        }
-        Box(
-            Modifier.clip(Kuodra.shape.md).background(c.warn)
-                .clickable(onClick = onReplenish)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-        ) { Text("Reponer", style = Kuodra.type.caption, color = Color.White) }
-    }
-}
-
-@Composable
-private fun DashboardHero(c: KuodraColors, uc: UseCase, heroLabel: String, personalHero: PersonalHero?) {
+private fun DashboardHero(c: KuodraColors, uc: UseCase, heroLabel: String, personalHero: PersonalHero?, gastosHero: GastosHero?) {
     Column(
         Modifier.fillMaxWidth().padding(top = 12.dp)
             .clip(Kuodra.shape.xxl).background(c.primary)
@@ -854,27 +803,101 @@ private fun DashboardHero(c: KuodraColors, uc: UseCase, heroLabel: String, perso
             return@Column
         }
 
-        // Gastos / Caja (aún hardcodeado; fuera de alcance de esta versión)
+        // Gastos: saldo neto + totales (data-driven).
         Text(heroLabel, style = Kuodra.type.caption, color = c.primaryInk.copy(alpha = 0.85f))
         Text(
-            when (uc) {
-                UseCase.Gastos -> "+$890"
-                UseCase.Caja -> "$900"
-                UseCase.Personal -> "$0"
-            },
+            gastosHero?.netLabel ?: "$0",
             style = Kuodra.type.displayAmount, color = c.primaryInk,
             modifier = Modifier.padding(top = 6.dp),
         )
-        when (uc) {
-            UseCase.Gastos -> {
-                Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HeroStat(c, "Te deben", "$1,090", Modifier.weight(1f))
-                    HeroStat(c, "Debes", "$200", Modifier.weight(1f))
+        if (gastosHero != null) {
+            Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                HeroStat(c, "Te deben", gastosHero.owedLabel, Modifier.weight(1f))
+                HeroStat(c, "Debes", gastosHero.oweLabel, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/** Tarjeta "Por cobrar" (Personal): total de todos los pendientes + acción de liquidación masiva. */
+@Composable
+private fun PendingReturnsCard(c: KuodraColors, pending: PendingReturnsUi, onMarkAll: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface)
+            .border(1.dp, c.line, Kuodra.shape.xl).padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+            Box(
+                Modifier.size(42.dp).clip(Kuodra.shape.md).background(c.posTint),
+                contentAlignment = Alignment.Center,
+            ) { Box(Modifier.size(width = 16.dp, height = 12.dp).clip(Kuodra.shape.sm).border(2.dp, c.pos, Kuodra.shape.sm)) }
+            Column(Modifier.weight(1f)) {
+                Text("Por cobrar", style = Kuodra.type.caption, color = c.ink3)
+                Text(pending.totalLabel, style = Kuodra.type.titleScreen, color = c.pos,
+                    modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        Text(pending.caption, style = Kuodra.type.caption, color = c.ink3,
+            modifier = Modifier.padding(top = 10.dp, start = 2.dp))
+        Box(
+            Modifier.fillMaxWidth().padding(top = 14.dp).clip(Kuodra.shape.lg).background(c.surface2)
+                .border(1.dp, c.line, Kuodra.shape.lg).clickable(onClick = onMarkAll).padding(vertical = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("Marcar todo como devuelto", style = Kuodra.type.heading, color = c.ink) }
+    }
+}
+
+/** Confirmación de "marcar todo como devuelto" (Personal): congela el % vigente en cada movimiento. */
+@Composable
+private fun ReturnAllConfirmSheet(c: KuodraColors, pending: PendingReturnsUi?, onClose: () -> Unit, onConfirm: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+        SheetHeader(c, "Marcar como devuelto", onClose)
+        Column(Modifier.padding(horizontal = 20.dp)) {
+            Column(Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface2).padding(17.dp)) {
+                Text("Total por cobrar", style = Kuodra.type.caption, color = c.ink3)
+                Text(pending?.totalLabel ?: "$0", style = Kuodra.type.titleScreen, color = c.pos,
+                    modifier = Modifier.padding(top = 4.dp))
+                pending?.let {
+                    Text(it.caption, style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(top = 4.dp))
                 }
             }
-            UseCase.Caja -> HeroProgress(c, "$900 disponibles de $5,000", "18%", 0.18f)
-            UseCase.Personal -> {}
+            Text("Se marcarán como devueltos y se congelará el porcentaje vigente en cada movimiento. No cambiará aunque reajustes el porcentaje después.",
+                style = Kuodra.type.caption, color = c.ink3,
+                modifier = Modifier.padding(top = 16.dp, bottom = 18.dp, start = 2.dp, end = 2.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.surface2)
+                        .border(1.dp, c.line, Kuodra.shape.lg).clickable(onClick = onClose).padding(vertical = 15.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("Cancelar", style = Kuodra.type.heading, color = c.ink) }
+                Box(
+                    Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.primary)
+                        .clickable(onClick = onConfirm).padding(vertical = 15.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("Marcar todo", style = Kuodra.type.heading, color = c.primaryInk) }
+            }
         }
+    }
+}
+
+/** Confirmación tras marcar todo como devuelto. */
+@Composable
+private fun ReturnAllDoneSheet(c: KuodraColors, onClose: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 8.dp, bottom = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(56.dp).clip(Kuodra.shape.pill).background(c.posTint), contentAlignment = Alignment.Center) {
+            Text("✓", style = Kuodra.type.displayAmount, color = c.pos)
+        }
+        Text("Marcados como devueltos", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(top = 12.dp))
+        Text("Quedan registrados con el porcentaje vigente.", style = Kuodra.type.caption, color = c.ink2,
+            modifier = Modifier.padding(top = 4.dp))
+        Box(
+            Modifier.fillMaxWidth().padding(top = 18.dp).clip(Kuodra.shape.lg).background(c.primary)
+                .clickable(onClick = onClose).padding(vertical = 15.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text("Entendido", style = Kuodra.type.heading, color = c.primaryInk) }
     }
 }
 

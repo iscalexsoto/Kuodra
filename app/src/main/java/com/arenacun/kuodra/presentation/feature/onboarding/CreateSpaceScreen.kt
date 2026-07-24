@@ -47,12 +47,10 @@ fun CreateSpaceScreen(
     val defaultName = terminologyFor(useCase).groupName
     val title = when (useCase) {
         UseCase.Personal -> "Crea tu espacio"
-        UseCase.Caja -> "Crea tu fondo"
         UseCase.Gastos -> "Crea tu grupo"
     }
     val label = when (useCase) {
         UseCase.Personal -> "NOMBRE DEL ESPACIO"
-        UseCase.Caja -> "NOMBRE DEL FONDO"
         UseCase.Gastos -> "NOMBRE DEL GRUPO"
     }
 

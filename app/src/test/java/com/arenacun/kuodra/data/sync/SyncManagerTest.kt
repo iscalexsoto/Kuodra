@@ -10,14 +10,26 @@ import com.arenacun.kuodra.data.local.db.MovementDao
 import com.arenacun.kuodra.data.local.db.MovementEntity
 import com.arenacun.kuodra.data.local.db.PeriodSnapshotDao
 import com.arenacun.kuodra.data.local.db.PeriodSnapshotEntity
+import com.arenacun.kuodra.data.local.db.PersonDao
+import com.arenacun.kuodra.data.local.db.PersonEntity
+import com.arenacun.kuodra.data.local.db.SettlementDao
+import com.arenacun.kuodra.data.local.db.SettlementEntity
+import com.arenacun.kuodra.data.local.db.SpaceDao
+import com.arenacun.kuodra.data.local.db.SpaceEntity
 import com.arenacun.kuodra.data.remote.BudgetApi
 import com.arenacun.kuodra.data.remote.CategoryApi
 import com.arenacun.kuodra.data.remote.MovementApi
 import com.arenacun.kuodra.data.remote.PeriodSnapshotApi
+import com.arenacun.kuodra.data.remote.PersonApi
+import com.arenacun.kuodra.data.remote.SettlementApi
+import com.arenacun.kuodra.data.remote.SpaceApi
 import com.arenacun.kuodra.data.remote.dto.BudgetDto
 import com.arenacun.kuodra.data.remote.dto.CategoryDto
 import com.arenacun.kuodra.data.remote.dto.MovementDto
 import com.arenacun.kuodra.data.remote.dto.PeriodSnapshotDto
+import com.arenacun.kuodra.data.remote.dto.PersonDto
+import com.arenacun.kuodra.data.remote.dto.SettlementDto
+import com.arenacun.kuodra.data.remote.dto.SpaceDto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
@@ -37,17 +49,21 @@ class SyncManagerTest {
     private class Env(val manager: SyncManager, val session: SessionStore, val cursors: SyncCursorStore)
 
     private fun newEnv(
-        movementApi: MovementApi,
-        movementDao: MovementDao,
+        movementApi: MovementApi = FakeMovementApi(),
+        movementDao: MovementDao = FakeMovementDao(mutableListOf()),
         categoryApi: CategoryApi = EmptyCategoryApi(),
         categoryDao: CategoryDao = EmptyCategoryDao(),
+        personApi: PersonApi = EmptyPersonApi(),
+        personDao: PersonDao = EmptyPersonDao(),
     ): Env {
         val dataStore = PreferenceDataStoreFactory.create { tmp.newFile("sync.preferences_pb") }
         val session = SessionStore(dataStore)
         val cursors = SyncCursorStore(dataStore)
         val manager = SyncManager(
             movementApi, categoryApi, EmptyBudgetApi(), EmptyPeriodSnapshotApi(),
+            EmptySpaceApi(), personApi, EmptySettlementApi(),
             movementDao, categoryDao, EmptyBudgetDao(), EmptyPeriodSnapshotDao(),
+            EmptySpaceDao(), personDao, EmptySettlementDao(),
             session, cursors,
         )
         return Env(manager, session, cursors)
@@ -58,7 +74,7 @@ class SyncManagerTest {
     private fun entity(id: String, dirty: Boolean, remoteUpdated: String = "", deleted: Boolean = false) =
         MovementEntity(
             id = id, owner = "u1", amountCents = 1000, categoryId = "uncategorized", title = id,
-            note = "", date = LocalDate.of(2026, 6, 20), payer = null, splitNames = emptyList(),
+            note = "", date = LocalDate.of(2026, 6, 20),
             updatedAt = 0, deleted = deleted, dirty = dirty, remoteUpdated = remoteUpdated,
         )
 
@@ -152,6 +168,31 @@ class SyncManagerTest {
         assertTrue(api.created.isEmpty())
     }
 
+    @Test
+    fun `a new collection pushes dirty rows and pulls remote deltas`() = runTest {
+        val personDao = FakePersonDao(
+            mutableListOf(
+                PersonEntity(
+                    id = "p1", owner = "u1", space = "s1", name = "Andrea", phone = "+521",
+                    updatedAt = 0, deleted = false, dirty = true, remoteUpdated = "",
+                ),
+            ),
+        )
+        val personApi = FakePersonApi(
+            createdUpdated = "2026-07-23 10:00:00.000Z",
+            listResult = listOf(PersonDto(id = "p2", owner = "u1", space = "s1", name = "Beto", updated = "2026-07-23 11:00:00.000Z")),
+        )
+        val env = newEnv(personApi = personApi, personDao = personDao)
+        env.session.signIn()
+
+        env.manager.sync()
+
+        assertEquals(listOf("p1"), personApi.created.map { it.id })
+        assertFalse(personDao.rows.first { it.id == "p1" }.dirty)
+        assertTrue(personDao.rows.any { it.id == "p2" && it.name == "Beto" })
+        assertEquals("2026-07-23 11:00:00.000Z", env.cursors.get("persons"))
+    }
+
     // --- Fakes ---
 
     private class FakeMovementApi(
@@ -171,6 +212,8 @@ class SyncManagerTest {
 
     private class FakeMovementDao(val rows: MutableList<MovementEntity>) : MovementDao {
         override fun observe(owner: String): Flow<List<MovementEntity>> = flowOf(rows.toList())
+        override fun observe(owner: String, space: String): Flow<List<MovementEntity>> =
+            flowOf(rows.filter { it.space == space })
         override suspend fun find(id: String): MovementEntity? = rows.find { it.id == id }
         override suspend fun dirtyRows(owner: String): List<MovementEntity> = rows.filter { it.dirty }
         override suspend fun markSynced(id: String, remoteUpdated: String) {
@@ -178,6 +221,37 @@ class SyncManagerTest {
         }
         override suspend fun upsert(movement: MovementEntity) {
             rows.removeAll { it.id == movement.id }; rows += movement
+        }
+        override suspend fun softDelete(id: String, updatedAt: Long) {
+            rows.replaceAll { if (it.id == id) it.copy(deleted = true, dirty = true) else it }
+        }
+        override suspend fun stampSettlement(ids: List<String>, settlementId: String, updatedAt: Long) {
+            rows.replaceAll { if (it.id in ids) it.copy(settlementId = settlementId, dirty = true) else it }
+        }
+    }
+
+    private class FakePersonApi(
+        var createdUpdated: String = "2026-01-01 00:00:00.000Z",
+        var listResult: List<PersonDto> = emptyList(),
+    ) : PersonApi {
+        val created = mutableListOf<PersonDto>()
+        override suspend fun list(since: String, token: String): List<PersonDto> = listResult
+        override suspend fun create(dto: PersonDto, token: String): PersonDto {
+            created += dto; return dto.copy(updated = createdUpdated)
+        }
+        override suspend fun update(dto: PersonDto, token: String): PersonDto = dto.copy(updated = createdUpdated)
+    }
+
+    private class FakePersonDao(val rows: MutableList<PersonEntity>) : PersonDao {
+        override fun observe(owner: String, space: String): Flow<List<PersonEntity>> =
+            flowOf(rows.filter { it.space == space })
+        override suspend fun find(id: String): PersonEntity? = rows.find { it.id == id }
+        override suspend fun dirtyRows(owner: String): List<PersonEntity> = rows.filter { it.dirty }
+        override suspend fun markSynced(id: String, remoteUpdated: String) {
+            rows.replaceAll { if (it.id == id) it.copy(dirty = false, remoteUpdated = remoteUpdated) else it }
+        }
+        override suspend fun upsert(person: PersonEntity) {
+            rows.removeAll { it.id == person.id }; rows += person
         }
         override suspend fun softDelete(id: String, updatedAt: Long) {
             rows.replaceAll { if (it.id == id) it.copy(deleted = true, dirty = true) else it }
@@ -222,5 +296,44 @@ class SyncManagerTest {
         override suspend fun dirtyRows(owner: String): List<PeriodSnapshotEntity> = emptyList()
         override suspend fun markSynced(id: String, remoteUpdated: String) = Unit
         override suspend fun upsert(snapshot: PeriodSnapshotEntity) = Unit
+    }
+    private class EmptySpaceApi : SpaceApi {
+        override suspend fun list(since: String, token: String): List<SpaceDto> = emptyList()
+        override suspend fun create(dto: SpaceDto, token: String): SpaceDto = dto
+        override suspend fun update(dto: SpaceDto, token: String): SpaceDto = dto
+    }
+    private class EmptySpaceDao : SpaceDao {
+        override fun observe(owner: String): Flow<List<SpaceEntity>> = flowOf(emptyList())
+        override suspend fun find(id: String): SpaceEntity? = null
+        override suspend fun dirtyRows(owner: String): List<SpaceEntity> = emptyList()
+        override suspend fun markSynced(id: String, remoteUpdated: String) = Unit
+        override suspend fun upsert(space: SpaceEntity) = Unit
+        override suspend fun softDelete(id: String, updatedAt: Long) = Unit
+    }
+    private class EmptyPersonApi : PersonApi {
+        override suspend fun list(since: String, token: String): List<PersonDto> = emptyList()
+        override suspend fun create(dto: PersonDto, token: String): PersonDto = dto
+        override suspend fun update(dto: PersonDto, token: String): PersonDto = dto
+    }
+    private class EmptyPersonDao : PersonDao {
+        override fun observe(owner: String, space: String): Flow<List<PersonEntity>> = flowOf(emptyList())
+        override suspend fun find(id: String): PersonEntity? = null
+        override suspend fun dirtyRows(owner: String): List<PersonEntity> = emptyList()
+        override suspend fun markSynced(id: String, remoteUpdated: String) = Unit
+        override suspend fun upsert(person: PersonEntity) = Unit
+        override suspend fun softDelete(id: String, updatedAt: Long) = Unit
+    }
+    private class EmptySettlementApi : SettlementApi {
+        override suspend fun list(since: String, token: String): List<SettlementDto> = emptyList()
+        override suspend fun create(dto: SettlementDto, token: String): SettlementDto = dto
+        override suspend fun update(dto: SettlementDto, token: String): SettlementDto = dto
+    }
+    private class EmptySettlementDao : SettlementDao {
+        override fun observe(owner: String, space: String): Flow<List<SettlementEntity>> = flowOf(emptyList())
+        override suspend fun find(id: String): SettlementEntity? = null
+        override suspend fun dirtyRows(owner: String): List<SettlementEntity> = emptyList()
+        override suspend fun markSynced(id: String, remoteUpdated: String) = Unit
+        override suspend fun upsert(settlement: SettlementEntity) = Unit
+        override suspend fun softDelete(id: String, updatedAt: Long) = Unit
     }
 }

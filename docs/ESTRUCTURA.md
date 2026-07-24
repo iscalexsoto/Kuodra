@@ -4,12 +4,13 @@ Referencia viva del código. Complementa a [`CLAUDE.md`](../CLAUDE.md) (que fija
 arquitectura): aquí está **el mapa concreto** de pantallas, navegación, componentes y lógica de
 dominio tras recrear el prototipo completo en Compose.
 
-> Estado: **maqueta de alta fidelidad con paridad total frente a los `.dc.html` de `reference/`**,
-> ya con el **flujo Personal funcional end-to-end**: autenticación (correo + OTP), movimientos,
-> categorías, presupuesto e historial de cortes sobre **Room (fuente de verdad offline) + sync con
-> PocketBase**, más escaneo de tickets y telemetría remota. Sesión persistida en DataStore y gating de
-> arranque. Los casos de uso **Gastos y Caja** siguen siendo seed en memoria
-> (`data/local/KuodraSeedSource`), pendientes de backend.
+> Estado: **Personal y Gastos funcionan end-to-end** sobre el mismo patrón (**Room fuente de verdad
+> offline + sync con PocketBase**, LWW + tombstones). Personal: auth (correo + OTP + Google), movimientos,
+> categorías, presupuesto e historial de cortes, escaneo de tickets y telemetría. Gastos: espacios
+> multi-instancia archivables, contactos con teléfono, gastos con pagadores múltiples y división por id
+> (equitativo/montos/porcentajes) en pantalla dedicada, balances y liquidación reales (corte →
+> `settlements`, WhatsApp para cobrar) y gasto Personal derivado. **La caja chica y el seed en memoria
+> (`KuodraSeedSource`) se eliminaron.** Sesión + espacio activo en DataStore, con gating de arranque.
 
 ---
 
@@ -29,26 +30,27 @@ cableadas en [`navigation/KuodraNavHost.kt`](../app/src/main/java/com/arenacun/k
 | `AllMovements` | ver todo (búsqueda/filtros) | `scrVerTodo` | "Ver todo" del dashboard |
 | `Settings` | ajustes adaptativos | `scr*Settings` | menú → "Ajustes" |
 | `Categories` | gestión de categorías (buscador) | — | Ajustes → "Categorías" |
-| `Settle` | liquidación / corte | `scrSettle` | tarjeta "Liquidar/Corte" |
-| `Replenish` | reponer fondo (Caja) | `scrRepon` | banner "Reponer" / menú |
+| `Settle` | liquidación (balances reales + WhatsApp) | `scrSettle` | tarjeta "Liquidar" |
+| `AddGraph` → `SplitConfig` | pagadores + división de un gasto compartido (comparte el `AddMovementViewModel`) | — | FieldRow "Dividir gasto" en `AddMovement` |
 | `History` / `HistoryDetail(id)` | historial de cortes | `scrHistory` | Ajustes → "Historial" / menú |
 
 **Overlays sin destino propio** (estado en el `UiState` del ViewModel, no en `remember`):
-- En `AddMovement`: **calculadora** (`Dialog`), **calendario** (`Dialog`), sheets de **categoría**,
-  **pagador** y **dividir** (`ModalBottomSheet`).
+- En `AddMovement`: **calculadora** (`Dialog`), **calendario** (`Dialog`), sheets de **categoría** y
+  **detalle** (`ModalBottomSheet`), y **diálogo** de gasto Personal derivado. Pagadores y división van
+  a la pantalla `SplitConfig`.
 - En `Dashboard` (estado `DashboardOverlay`, hoja activa en el enum `DashboardSheet`):
-  **selector de espacios** "Tus espacios" (al tocar el título), **crear espacio** y **menú "Opciones"**
-  del espacio (botón ···, filas según caso de uso: compartir resumen/corte, ajustes, cerrar periodo,
-  historial, reponer, salir), más sus sheets disparados (`Share`/`Shared`, `PCloseConfirm`/`PClosed`) y
-  el **flujo salir/archivar grupo** (overlay inline de 3 pasos `LeaveStep`, patrón `confirmDelete`). El
-  toggle de tema oscuro vive en `Settings` (no en el menú). El FAB "Agregar" abre el sheet
-  **`AddOptions`** (`AddOptionsSheetContent`): escanear ticket / tomar de la galería / capturar manual.
+  **selector de espacios** "Tus espacios" (Personal + espacios de Gastos + archivados, al tocar el
+  título; "Crear espacio" navega a `CreateSpace`), y **menú "Opciones"** del espacio (botón ···, filas
+  según caso de uso: compartir resumen, ajustes, cerrar periodo, historial, salir), más sus sheets
+  disparados (`Share`/`Shared`, `PCloseConfirm`/`PClosed`) y el **flujo salir/archivar grupo** (overlay
+  inline de 3 pasos `LeaveStep`; Confirmar llama `SpaceRepository.archive`). El FAB "Agregar" abre el
+  sheet **`AddOptions`**: escanear ticket / tomar de la galería / capturar manual.
 - En `AllMovements`: **overlay de búsqueda** (pantalla completa) y **sheet de filtros**.
-- En `Settings`: calculadora de monto (presupuesto/fondo) y sheet de **agregar/editar contacto**.
+- En `Settings`: calculadora de monto (presupuesto) y sheet de **agregar/editar contacto** (Nombre + Teléfono).
 - En `HistoryDetail`: flujo **reenviar corte** (`reshare` → `shared`).
 
-El flujo cambia de **caso de uso** (`Personal` / `Gastos` / `Caja`) variando contenido y
-terminología, **no** el styling. Lo controla `Space.useCase` + `terminologyFor()`.
+El flujo cambia de **caso de uso** (`Personal` / `Gastos`) variando contenido y terminología, **no**
+el styling. Lo controla `Space.useCase` + `terminologyFor()`.
 
 ---
 
@@ -56,22 +58,26 @@ terminología, **no** el styling. Lo controla `Space.useCase` + `terminologyFor(
 
 ```
 com.arenacun.kuodra
-  KuodraApplication.kt          # startKoin(appModule, networkModule, dataModule, telemetryModule, presentationModule)
+  KuodraApplication.kt          # startKoin(networkModule, dataModule, telemetryModule, presentationModule)
                                 #   + conecta CrashHandler↔Telemetry y hace flush() de telemetría al arrancar
   MainActivity.kt               # setContent { KuodraRoot() }
-  di/                           # AppModule, NetworkModule, DataModule, TelemetryModule, PresentationModule
+  di/                           # NetworkModule, DataModule, TelemetryModule, PresentationModule
   domain/
     model/
       UseCase.kt                # enum + Terminology + terminologyFor()
       Session.kt                # usuario autenticado (userId + email); el token vive en data
       Space.kt, Person.kt, Category.kt, AvatarTone.kt
-      Movement.kt              # incluye date: LocalDate + items (MovementItem) + adjustmentOf() + helpers puros
+      SpacePerson.kt           # contacto de un espacio (id, name, phone) + PersonRef.ME ("Tú")
+      SharedExpense.kt         # PayerShare, SplitMode (None/Equal/Amount/Percent), SplitShare
+      Settlement.kt            # corte de Gastos (lines por persona + transfers) + Transfer
+      Movement.kt              # date + spaceId + payers/splitMode/splits + settlementId + items + returnStatus/... + helpers
+      ReturnStatus.kt          # enum devolución (None/Pending/Returned), solo Personal
       MovementCategory.kt      # catálogo del selector de categoría (defaults)
       Calc.kt                  # MOTOR PURO de la calculadora (CalcState, CalcKey, evaluate, formatAmount)
       CalendarMonth.kt         # LÓGICA PURA del calendario (rejilla, navegación acotada a hoy)
       DateLabels.kt            # formateo puro de fechas ("Hoy · 20 jun", "Martes · 18 jun")
-      SpaceSettings.kt         # BudgetConfig (día por frecuencia)/FundConfig/BudgetFrequency + SpaceSettings
-      SettlementRecord.kt      # registro de corte/liquidación + SettlementLine
+      SpaceSettings.kt         # BudgetConfig (día por frecuencia + returnPercent global)/BudgetFrequency + SpaceSettings
+      SettlementRecord.kt      # registro de corte/liquidación (display) + SettlementLine
     scan/
       TicketScan.kt            # ScanSource, TicketParseSource, ParsedTicket(+Item), TicketScan
       OcrEngine.kt             # puerto de OCR (impl MLKit en data); Uri como String
@@ -80,10 +86,12 @@ com.arenacun.kuodra
       RegexTicketParser.kt     # fallback local puro (total/fecha/comercio/items por heurísticas)
     usecase/
       MovementQuery.kt         # filter() + groupByDay() puros (búsqueda/filtros/agrupación)
+      ReturnCalc.kt            # PURO: base devolvible (por partidas), reembolso vivo/congelado, total por cobrar
+      SplitCalc, SharedBalances, SettleSuggestions, CloseSettlement, WhatsAppMessage  # PUROS de Gastos
       ScanTicketUseCase.kt     # orquestador: OCR → normalize → cadena [Mistral, Regex]
     repository/
-      AuthRepository, SpaceRepository, MovementRepository, CategoryRepository,
-      SummaryRepository, PreferencesRepository, SettingsRepository, SnapshotRepository
+      AuthRepository, SpaceRepository, PersonRepository, MovementRepository, CategoryRepository,
+      SummaryRepository, PreferencesRepository, SettingsRepository, SettlementRepository, SnapshotRepository
     telemetry/
       Telemetry.kt             # PUERTO NEUTRAL de observabilidad (breadcrumb/log/capture/setUser/flush)
                                #   + LogLevel + NoOpTelemetry. Impl detrás; swap a Sentry = otra impl
@@ -91,14 +99,13 @@ com.arenacun.kuodra
     local/
       KuodraDataStore           # extensión Context.kuodraDataStore (Preferences DataStore único)
       SessionStore              # persiste token + identidad de la sesión PocketBase
-      KuodraSeedSource          # seed in-memory — SOLO Gastos/Caja (aún sin backend); Personal ya no lo usa
-      db/                       # Room (fuente de verdad offline): KuodraDatabase (v7) + entities + DAOs + Converters
-                                #   MovementEntity/Dao, CategoryEntity/Dao, BudgetEntity/Dao,
-                                #   PeriodSnapshotEntity/Dao, TelemetryEventEntity/Dao
+      db/                       # Room (fuente de verdad offline): KuodraDatabase (v10) + entities + DAOs + Converters
+                                #   MovementEntity/Dao, CategoryEntity/Dao, BudgetEntity/Dao, PeriodSnapshotEntity/Dao,
+                                #   SpaceEntity/Dao, PersonEntity/Dao, SettlementEntity/Dao, TelemetryEventEntity/Dao
     remote/
       PocketBaseClient          # HttpClient Ktor (OkHttp, JSON tolerante) + URLs de colecciones
       AuthApi / KtorAuthApi     # request-otp / auth-with-otp / records (alta) / auth-refresh
-      MovementApi, CategoryApi, BudgetApi, PeriodSnapshotApi  # list(since)/create/update por colección (interfaz + impl Ktor)
+      MovementApi, CategoryApi, BudgetApi, PeriodSnapshotApi, SpaceApi, PersonApi, SettlementApi  # list(since)/create/update por colección
       TelemetryApi / KtorTelemetryApi  # POST a la colección telemetry_events (create rule autenticada)
       TicketAnalysisApi / KtorTicketAnalysisApi  # POST /api/kuodra/analyze-ticket (proxy Mistral, timeout 15s)
       dto/AuthDtos, dto/SyncDtos, dto/TelemetryDtos, dto/ScanDtos  # DTOs @Serializable por área
@@ -107,7 +114,7 @@ com.arenacun.kuodra
       SyncCursorStore           # cursor por colección en DataStore
       SyncTrigger / WorkManagerSyncTrigger + SyncWorker  # agendado con WorkManager (red requerida)
     mapper/                     # DTO/Entity ↔ dominio: MovementMapper, CategoryMapper, BudgetMapper,
-                                #   SnapshotMapper, ScanMapper
+                                #   SnapshotMapper, SpaceMapper, PersonMapper, SettlementMapper, ScanMapper
     telemetry/                  # impl PocketBase del puerto Telemetry (ver "Observabilidad" abajo)
       PocketBaseTelemetry       # ring buffer de breadcrumbs + arma eventos → cola Room → TelemetryTrigger
       TelemetryUploader         # motor de entrega puro: drena spool, sube por lotes si hay sesión
@@ -117,8 +124,8 @@ com.arenacun.kuodra
     scan/
       MlKitOcrEngine            # impl del puerto OcrEngine (MLKit text-recognition BUNDLED, offline)
       MistralTicketParser       # eslabón remoto: proxy PocketBase→Mistral; cualquier fallo ⇒ null (cae a regex)
-    repository/                 # *RepositoryImpl: Personal real (Room + sync) — Movement/Category/Budget/
-                                #   Snapshot/Settings; Auth real; Space/Preferences en DataStore; seed solo Gastos/Caja
+    repository/                 # *RepositoryImpl: Personal y Gastos reales (Room + sync) — Movement/Category/Budget/
+                                #   Snapshot/Settings/Space/Person/Settlement; Auth real; espacio activo + Preferences en DataStore
   presentation/
     KuodraRoot.kt, navigation/ (Destinations, KuodraNavHost)
     crash/      CrashHandler (uncaught exceptions) + CrashActivity (pantalla de crash)
@@ -137,15 +144,14 @@ com.arenacun.kuodra
     feature/
       auth/        AuthViewModel + AuthUiState + Welcome/Email/Otp + OAuthRedirectBus (deeplink OAuth2)
       onboarding/  NameViewModel, ModeViewModel, CreateSpaceViewModel + Name/Mode/CreateSpace
-      dashboard/   DashboardViewModel + DashboardUiState (incl. DashboardOverlay/LeaveStep) + DashboardScreen
-      movement/    AddMovement{ViewModel,UiState,Screen}, MovementDetail{ViewModel,Screen}
+      dashboard/   DashboardViewModel + DashboardUiState (incl. DashboardOverlay/LeaveStep/GastosHero) + DashboardScreen
+      movement/    AddMovement{ViewModel,UiState,Screen}, SplitConfigScreen (pagadores+división), MovementDetail{ViewModel,Screen}
       scan/        ScanDraftViewModel (holder del TicketScan, scope AddGraph),
                    ScanTicket{UiState (ScanPhase), ViewModel, Screen} (CameraX + Photo Picker + animación)
       allmovements/AllMovements{ViewModel,UiState,Screen}
       settings/    Settings{ViewModel,UiState,Screen}  (adaptativa por caso de uso)
       categories/  Categories{ViewModel,UiState,Screen}  (catálogo + buscador, todos los casos)
-      settle/      Settle{ViewModel,UiState,Screen}
-      replenish/   Replenish{ViewModel,UiState,Screen}
+      settle/      Settle{ViewModel,UiState,Screen}  (balances reales + WhatsApp)
       history/     History{ViewModel,Screen}, HistoryDetail{ViewModel,Screen}
 ```
 
@@ -267,17 +273,17 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
   `template` sin romper clientes.
 
 ### Datos y "hoy"
-- **Personal = Room + sync (fuente de verdad offline).** Los `*RepositoryImpl` leen/escriben Room
-  (`data/local/db`) filtrando por `owner`; las escrituras se marcan `dirty` y disparan el `SyncTrigger`.
-  `SyncManager` hace por colección **push** de `dirty` + **pull** de deltas (`updated > cursor`) con
-  **last-write-wins** y tombstones (`deleted`); no pisa filas con cambios locales pendientes ni las que
-  ya están en la versión remota (evita que un pull borre datos que el servidor ignoró). Cada colección
-  se sincroniza aislada. Esquema y reglas del servidor: [`POCKETBASE.md`](POCKETBASE.md).
-- **El seed (`KuodraSeedSource`) solo respalda Gastos y Caja** (movimientos, personas, ajustes,
-  historial) mientras no tengan backend. Personal ya no depende del seed.
-- **Lógica de negocio pura reutilizable** en `domain/usecase`: `BudgetPeriod` (ventana del periodo de
-  presupuesto) y `ClosePeriod` (arma el `PeriodSnapshot` del corte Personal). Patrón a repetir para la
-  liquidación de Gastos/Caja.
+- **Todo = Room + sync (fuente de verdad offline).** Los `*RepositoryImpl` leen/escriben Room
+  (`data/local/db`) filtrando por `owner` (y por `space` en Gastos); las escrituras se marcan `dirty` y
+  disparan el `SyncTrigger`. `SyncManager` hace por colección **push** de `dirty` + **pull** de deltas
+  (`updated > cursor`) con **last-write-wins** y tombstones (`deleted`); no pisa filas con cambios locales
+  pendientes ni las que ya están en la versión remota (evita que un pull borre datos que el servidor
+  ignoró). Cada colección se sincroniza aislada. Esquema y reglas: [`POCKETBASE.md`](POCKETBASE.md).
+- **El seed en memoria se eliminó**: Gastos ya es real (Room + sync), igual que Personal.
+- **Lógica de negocio pura reutilizable** en `domain/usecase`: `BudgetPeriod`, `ClosePeriod` y
+  `ReturnCalc` (Personal); y de Gastos: `SplitCalc` (resuelve/valida la división a centavos),
+  `SharedBalances` (neto por persona), `SettleSuggestions` (transferencias, greedy determinístico),
+  `CloseSettlement` (congela el `Settlement` + ids a estampar) y `WhatsAppMessage`.
 - El "hoy" es la fecha real del sistema (`LocalDate.now()`), inyectable como parámetro en los ViewModels
   que lo usan para poder fijarlo en tests.
 

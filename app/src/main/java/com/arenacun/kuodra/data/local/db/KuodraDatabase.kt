@@ -17,11 +17,14 @@ import androidx.room.TypeConverters
         BudgetEntity::class,
         PeriodSnapshotEntity::class,
         TelemetryEventEntity::class,
+        SpaceEntity::class,
+        PersonEntity::class,
+        SettlementEntity::class,
     ],
-    // v7: columnas de escaneo en `movements` (scanRawText/scanSource). El bump fuerza la
-    // migración destructiva ya configurada; el sync repuebla los datos desde PocketBase tras limpiar
-    // (la telemetría pendiente que se pierda es aceptable: es diagnóstico best-effort).
-    version = 7,
+    // v10: Gastos compartidos por id — se retiran las columnas legacy `payer`/`splitNames` de
+    // `movements` (la UI ya usa `payers`/`splits` por id). El bump fuerza la migración destructiva
+    // ya configurada; el sync repuebla los datos desde PocketBase tras limpiar cursores.
+    version = 10,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -31,4 +34,7 @@ abstract class KuodraDatabase : RoomDatabase() {
     abstract fun budgetDao(): BudgetDao
     abstract fun periodSnapshotDao(): PeriodSnapshotDao
     abstract fun telemetryDao(): TelemetryDao
+    abstract fun spaceDao(): SpaceDao
+    abstract fun personDao(): PersonDao
+    abstract fun settlementDao(): SettlementDao
 }

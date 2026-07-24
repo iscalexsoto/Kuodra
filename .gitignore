@@ -29,6 +29,7 @@ secrets.properties
 # Project Specific & Claude
 CLAUDE.md
 /reference/
+/docs/MONETIZACION.md
 
 # Kotlin
 /bin/

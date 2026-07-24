@@ -216,11 +216,16 @@ last-write-wins. En todas, `id`/`created`/`updated` son de sistema (el cliente e
 | `title`      | text     |                                                                 |
 | `note`       | text     |                                                                 |
 | `date`       | text     | Fecha ISO `yyyy-MM-dd` (texto, no el tipo date de PB).          |
-| `payer`      | text     | Opcional (Gastos/Caja).                                         |
-| `splitNames` | json     | Lista de nombres (Gastos).                                      |
-| `items`      | json     | Partidas del desglose: `[{id, concept, amount(centavos), payer, inFund}]`; `[]` = sin detalle. **Obligatorio crearlo**: sin esta columna PocketBase ignora el campo del DTO y el pull del sync borra las partidas locales. |
+| `space`      | text     | Id del espacio de Gastos al que pertenece; vacío = Personal. **Obligatorio crearlo antes de desplegar** (misma advertencia que abajo). |
+| `payers`     | json     | Pagadores del gasto (Gastos): `[{personId, amount(centavos)}]`. `personId` = `"me"` (el dueño) o id de `persons`. **Obligatorio crearlo antes de desplegar**. |
+| `splitMode`  | text     | Modo de división elegido en la captura: `None`/`Equal`/`Amount`/`Percent`. |
+| `splits`     | json     | División resuelta a centavos (Gastos): `[{personId, share(centavos)}]`; suma el total. **Obligatorio crearlo antes de desplegar**. |
+| `settlementId`| text    | Id del corte que liquidó el gasto; vacío = vivo (cuenta en balances). |
+| `items`      | json     | Partidas del desglose: `[{id, concept, amount(centavos), payer, returnable}]`; `[]` = sin detalle. `returnable` (bool, default true) marca si la partida entra en la devolución (Personal). **Obligatorio crearlo**: sin esta columna PocketBase ignora el campo del DTO y el pull del sync borra las partidas locales. |
 | `scanRawText`| text     | Opcional. Raw OCR del ticket si el movimiento nació de un escaneo (puede ser largo; material para los templates futuros). |
 | `scanSource` | text     | Opcional. `Camera`/`Gallery` (nombre del enum `ScanSource`); vacío = captura manual. |
+| `returnStatus` | text   | Estado de devolución (Personal): `None`/`Pending`/`Returned` (nombre del enum `ReturnStatus`); vacío = None. **Obligatorio crearlo antes de desplegar**: sin la columna, el pull del sync borra el estado local. |
+| `returnPercent`| number | % de devolución congelado al marcar `Returned` (Personal); 0/vacío = sin estampar. **Obligatorio crearlo antes de desplegar** (misma advertencia). |
 | `deleted`    | bool     | Tombstone: borrado lógico para propagar la baja.               |
 
 ### `categories` (tipo: Base)
@@ -238,7 +243,9 @@ last-write-wins. En todas, `id`/`created`/`updated` son de sistema (el cliente e
 
 ### `budgets` (tipo: Base)
 
-Una fila por usuario; el **id del registro es el `owner`** (el cliente lo crea con ese id).
+Una fila por usuario; el **id del registro es el `owner`** (el cliente lo crea con ese id). De facto
+es el **registro de ajustes Personal**: además del presupuesto guarda `returnPercent` (el % global de
+devoluciones), que es independiente de `enabled`.
 
 | Campo            | Tipo     | Notas                                    |
 |------------------|----------|------------------------------------------|
@@ -251,6 +258,7 @@ Una fila por usuario; el **id del registro es el `owner`** (el cliente lo crea c
 | `secondDay`      | number   |                                          |
 | `monthlyDay`     | number   |                                          |
 | `customInterval` | number   |                                          |
+| `returnPercent`  | number   | % global a devolver de los movimientos "Por devolver" (5..100; default 75). **Obligatorio crearlo antes de desplegar**: sin la columna, el pull revierte el % local al default. |
 | `deleted`        | bool     |                                          |
 
 ### `period_snapshots` (tipo: Base)
@@ -266,6 +274,50 @@ Una fila por usuario; el **id del registro es el `owner`** (el cliente lo crea c
 | `lines`        | json   | `[{categoryName,count,amount(centavos),tone}]`.    |
 | `createdAt`    | number | epoch millis.                                      |
 | `deleted`      | bool   |                                                    |
+
+### `spaces` (tipo: Base) — Gastos compartidos
+
+Cada fila es un grupo de gastos compartidos del usuario (roomies, viaje, etc.). Multi-instancia:
+un usuario puede tener varios. La app es single-admin; no hay miembros con cuenta.
+
+| Campo            | Tipo   | Notas                                              |
+|------------------|--------|----------------------------------------------------|
+| `owner`          | relation → `users` (single, required, cascade)     | |
+| `name`           | text   | Nombre del espacio.                                |
+| `archived`       | bool   | Guardado sin borrar (p. ej. viaje terminado).      |
+| `reminderEnabled`| bool   | Recordatorio de liquidación.                       |
+| `deleted`        | bool   | Tombstone.                                          |
+
+### `persons` (tipo: Base) — contactos de un espacio
+
+Registros de contacto de un espacio (Nombre + Teléfono para WhatsApp). No son cuentas ni miembros
+conectados; solo a quién se reparte y a quién se cobra. El dueño ("Tú") **no** es una fila aquí
+(se referencia con el id reservado `"me"`).
+
+| Campo     | Tipo   | Notas                                              |
+|-----------|--------|----------------------------------------------------|
+| `owner`   | relation → `users` (single, required, cascade)     | |
+| `space`   | text   | Id del `spaces` al que pertenece.                  |
+| `name`    | text   |                                                    |
+| `phone`   | text   | Formato internacional para `wa.me`; opcional.      |
+| `deleted` | bool   | Tombstone.                                          |
+
+### `settlements` (tipo: Base) — cortes de Gastos
+
+Corte/liquidación congelado de un espacio (sucesor data-shaped de `period_snapshots`, pero por
+persona en vez de por categoría). Al cerrar, los movimientos vivos se estampan con su `settlementId`.
+
+| Campo       | Tipo   | Notas                                                        |
+|-------------|--------|--------------------------------------------------------------|
+| `owner`     | relation → `users` (single, required, cascade)               | |
+| `space`     | text   | Id del `spaces`.                                             |
+| `title`     | text   | P. ej. "Liquidación de junio".                              |
+| `date`      | text   | ISO `yyyy-MM-dd`.                                            |
+| `total`     | number | Centavos.                                                   |
+| `lines`     | json   | Saldo por persona congelado: `[{personId, name, net(centavos)}]`. |
+| `transfers` | json   | Transferencias sugeridas: `[{fromId, toId, amount(centavos)}]`. |
+| `createdAt` | number | epoch millis.                                               |
+| `deleted`   | bool   | Tombstone.                                                   |
 
 ### API rules (en TODAS las colecciones de datos de arriba)
 
@@ -425,6 +477,10 @@ Escaneo de tickets:
 
 | Fecha      | Cambio                                                                 |
 |------------|------------------------------------------------------------------------|
+| 2026-07-24 | Gastos compartidos por id: las columnas legacy `payer`/`splitNames` de `movements` quedan sin uso (el cliente usa `payers`/`splits`). Se pueden eliminar del servidor; no es urgente (columnas ignoradas no rompen nada). |
+| 2026-07-23 | Gastos compartidos: nuevas colecciones `spaces`, `persons`, `settlements` (Base, mismas API rules multi-tenant) + columnas `space`/`payers`/`splitMode`/`splits`/`settlementId` en `movements`. Crear todo **antes** de desplegar el cliente (sin las columnas de `movements` el pull borra los datos locales). |
+| 2026-07-23 | Caja chica retirada del producto: la clave `inFund` desaparece del json `items` (solo lado cliente; el resto del blob no cambia y las claves legacy se ignoran). Sin cambios de columnas en el servidor. |
+| 2026-07-23 | Devoluciones (Personal): campos `returnStatus` (text) y `returnPercent` (number) en `movements`, `returnPercent` (number) en `budgets`, y `returnable` (bool) dentro del json `items`. Crear las columnas de `movements`/`budgets` **antes** de desplegar (si no, el pull borra el estado local). |
 | 2026-07-04 | Login con Google (OAuth2) en `users`: cliente Web en Google Cloud + provider Google en PB + App Link `https://<TU_DOMINIO>/oauth-redirect` con `assetlinks.json`. Flujo auth-code + PKCE vía Custom Tabs (`auth-methods` / `auth-with-oauth2`). |
 | 2026-07-03 | Campo `items` (json) en `movements`. Faltaba desde que existen las partidas: PocketBase ignoraba el campo del DTO y el pull del sync **borraba las partidas locales** tras cada guardado. |
 | 2026-07-02 | Campos `scanRawText` y `scanSource` en `movements` + ruta custom `/api/kuodra/analyze-ticket` (hook JS + `MISTRAL_API_KEY`) para el escaneo de tickets. |

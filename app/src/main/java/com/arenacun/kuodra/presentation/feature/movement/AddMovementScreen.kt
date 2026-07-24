@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -35,6 +36,7 @@ import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.DateLabels
 import com.arenacun.kuodra.domain.model.MovementItem
+import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.presentation.component.BackCircle
@@ -58,6 +60,7 @@ fun AddMovementScreen(
     draftViewModel: ScanDraftViewModel,
     onBack: () -> Unit,
     onSaved: () -> Unit,
+    onOpenSplit: () -> Unit,
     viewModel: AddMovementViewModel = koinViewModel(),
 ) {
     val c = Kuodra.colors
@@ -73,7 +76,24 @@ fun AddMovementScreen(
         if (!viewModel.isEditMode) draftViewModel.consume()?.let(viewModel::applyScan)
     }
 
-    LaunchedEffect(Unit) { viewModel.saved.collect { onSaved() } }
+    // Diálogo "registrar tu parte como gasto personal" (offer tras guardar un gasto compartido).
+    var personalOffer by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        viewModel.saved.collect { result ->
+            when (result) {
+                is SaveResult.Done -> onSaved()
+                is SaveResult.OfferPersonalCopy -> personalOffer = result.shareLabel
+            }
+        }
+    }
+    personalOffer?.let { share ->
+        PersonalCopyDialog(
+            c = c,
+            shareLabel = share,
+            onConfirm = { viewModel.onConfirmPersonalCopy(); personalOffer = null; onSaved() },
+            onDismiss = { personalOffer = null; onSaved() },
+        )
+    }
 
     val dateSel = when (state.date) {
         state.today -> 0
@@ -198,17 +218,12 @@ fun AddMovementScreen(
             )
         }
 
-        // payer (gastos/caja)
-        if (uc != UseCase.Personal) {
-            FieldRow(
-                c,
-                leading = { ToneAvatar(if (state.payer == "Tú") "T" else state.payer.take(1), toneForName(state.payer), size = 34.dp) },
-                label = t.paidLabel,
-                value = state.payer,
-                onClick = { viewModel.onOpenSheet(AddSheet.Payer) },
-            )
+        // devolución (personal)
+        if (uc == UseCase.Personal) {
+            ReturnToggleRow(c, state.returnStatus, viewModel::onToggleReturnPending)
         }
-        // dividir entre (gastos)
+
+        // pagadores + división (gastos): pantalla dedicada
         if (uc == UseCase.Gastos) {
             FieldRow(
                 c,
@@ -218,25 +233,9 @@ fun AddMovementScreen(
                         Box(Modifier.size(11.dp).clip(Kuodra.shape.pill).background(c.pos))
                     }
                 },
-                label = "Dividir entre",
-                value = state.splitNames.joinToString(", ").ifBlank { "Nadie" },
-                onClick = { viewModel.onOpenSheet(AddSheet.Split) },
-            )
-        }
-        // contra el fondo (caja)
-        if (uc == UseCase.Caja) {
-            FieldRow(
-                c,
-                leading = {
-                    Box(Modifier.size(34.dp).clip(Kuodra.shape.md).background(c.tint),
-                        contentAlignment = Alignment.Center) {
-                        Box(Modifier.size(width = 14.dp, height = 11.dp).clip(Kuodra.shape.sm)
-                            .border(2.dp, c.tintInk, Kuodra.shape.sm))
-                    }
-                },
-                label = "Contra el fondo",
-                value = "${space.displayName} · $900 disponibles",
-                onClick = {},
+                label = "Dividir gasto",
+                value = state.splitSummary,
+                onClick = onOpenSplit,
             )
         }
 
@@ -306,20 +305,16 @@ fun AddMovementScreen(
                 )
             }
         }
-        AddSheet.Payer -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            PickerSheet(c, t.paidLabel.ifBlank { "¿Quién pagó?" }, state.members, state.payer) { viewModel.onPickPayer(it) }
-        }
-        AddSheet.Split -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            SplitSheet(c, state.members, state.splitNames, viewModel::onToggleSplit, viewModel::onCloseSheet)
-        }
         AddSheet.Detail -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             DetailSheet(
                 c = c,
                 items = state.items,
                 adjustment = Calc.formatAmount(state.adjustment.major),
+                showReturnable = uc == UseCase.Personal && state.returnStatus == ReturnStatus.Pending,
                 onConcept = viewModel::onItemConcept,
                 onAmount = viewModel::onOpenItemPad,
                 onRemove = viewModel::onRemoveItem,
+                onToggleReturnable = viewModel::onToggleItemReturnable,
                 onAdd = viewModel::onAddItem,
                 onDone = viewModel::onCloseSheet,
             )
@@ -372,6 +367,53 @@ private fun FieldRow(
             Text(value, style = Kuodra.type.body, color = c.ink, maxLines = 1, modifier = Modifier.padding(top = 1.dp))
         }
         Chevron(7.dp, c.ink3, degrees = 90f)
+    }
+}
+
+/**
+ * Fila "Devolución" (solo Personal): alterna None↔Pending con un switch. Un movimiento ya Devuelto
+ * se muestra en solo lectura (se reabre desde el detalle del movimiento).
+ */
+@Composable
+private fun ReturnToggleRow(c: KuodraColors, status: ReturnStatus, onToggle: () -> Unit) {
+    val returned = status == ReturnStatus.Returned
+    val on = status == ReturnStatus.Pending
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp).clip(Kuodra.shape.lg)
+            .background(c.surface).border(1.dp, c.line, Kuodra.shape.lg)
+            .then(if (returned) Modifier else Modifier.clickable(onClick = onToggle))
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(34.dp).clip(Kuodra.shape.md).background(c.posTint),
+            contentAlignment = Alignment.Center,
+        ) { Box(Modifier.size(width = 14.dp, height = 11.dp).clip(Kuodra.shape.sm).border(2.dp, c.pos, Kuodra.shape.sm)) }
+        Column(Modifier.weight(1f)) {
+            Text("Devolución", style = Kuodra.type.caption, color = c.ink3)
+            Text(
+                when (status) {
+                    ReturnStatus.None -> "No aplica"
+                    ReturnStatus.Pending -> "Por devolver"
+                    ReturnStatus.Returned -> "Devuelto"
+                },
+                style = Kuodra.type.body, color = c.ink, modifier = Modifier.padding(top = 1.dp),
+            )
+        }
+        if (returned) {
+            Text("En detalle", style = Kuodra.type.caption, color = c.ink3)
+        } else {
+            Box(
+                Modifier.width(46.dp).height(28.dp).clip(Kuodra.shape.pill)
+                    .background(if (on) c.primary else c.surface2)
+                    .border(1.dp, if (on) c.primary else c.line, Kuodra.shape.pill),
+                contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
+            ) {
+                Box(Modifier.padding(horizontal = 3.dp).size(22.dp).clip(Kuodra.shape.pill)
+                    .background(if (on) c.primaryInk else c.surface))
+            }
+        }
     }
 }
 
@@ -428,80 +470,24 @@ private fun CategorySheet(
 }
 
 @Composable
-private fun PickerSheet(
-    c: KuodraColors,
-    title: String,
-    options: List<String>,
-    selected: String,
-    onPick: (String) -> Unit,
-) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
-        Text(title, style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(bottom = 8.dp))
-        options.forEach { name ->
-            val isSel = name == selected
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(Kuodra.shape.lg)
-                    .background(if (isSel) c.tint else c.surface)
-                    .border(1.dp, if (isSel) c.primary else c.line, Kuodra.shape.lg)
-                    .clickable { onPick(name) }.padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ToneAvatar(if (name == "Tú") "T" else name.take(1), toneForName(name), size = 34.dp)
-                Text(name, style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
-                if (isSel) Chevron(8.dp, c.primary, degrees = 0f)
-            }
-        }
-    }
-}
-
-@Composable
-private fun SplitSheet(
-    c: KuodraColors,
-    options: List<String>,
-    selected: List<String>,
-    onToggle: (String) -> Unit,
-    onDone: () -> Unit,
-) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
-        Text("Dividir entre", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(bottom = 8.dp))
-        options.forEach { name ->
-            val isSel = name in selected
-            Row(
-                Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(Kuodra.shape.lg)
-                    .background(c.surface).border(1.dp, c.line, Kuodra.shape.lg)
-                    .clickable { onToggle(name) }.padding(horizontal = 14.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ToneAvatar(if (name == "Tú") "T" else name.take(1), toneForName(name), size = 34.dp)
-                Text(name, style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
-                CheckMark(c, isSel)
-            }
-        }
-        Box(
-            Modifier.fillMaxWidth().padding(top = 14.dp).clip(Kuodra.shape.lg).background(c.primary)
-                .clickable(onClick = onDone).padding(vertical = 15.dp),
-            contentAlignment = Alignment.Center,
-        ) { Text("Listo", style = Kuodra.type.heading, color = c.primaryInk) }
-    }
-}
-
-@Composable
 private fun DetailSheet(
     c: KuodraColors,
     items: List<MovementItem>,
     adjustment: String,
+    showReturnable: Boolean,
     onConcept: (String, String) -> Unit,
     onAmount: (String) -> Unit,
     onRemove: (String) -> Unit,
+    onToggleReturnable: (String) -> Unit,
     onAdd: () -> Unit,
     onDone: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp).padding(bottom = 24.dp)) {
         Text("Detalle", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(bottom = 4.dp))
         Text(
-            "Desglosa el gasto en partidas. Lo no detallado queda como Ajuste.",
+            if (showReturnable)
+                "Marca qué partidas entran en la devolución. Lo no detallado queda como Ajuste."
+            else "Desglosa el gasto en partidas. Lo no detallado queda como Ajuste.",
             style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(bottom = 10.dp),
         )
 
@@ -513,6 +499,11 @@ private fun DetailSheet(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (showReturnable) {
+                    Box(Modifier.clickable { onToggleReturnable(item.id) }) {
+                        CheckMark(c, item.returnable)
+                    }
+                }
                 BasicTextField(
                     value = item.concept,
                     onValueChange = { onConcept(item.id, it) },
@@ -579,5 +570,38 @@ private fun CheckMark(c: KuodraColors, checked: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         if (checked) Text("✓", style = Kuodra.type.caption, color = c.primaryInk, textAlign = TextAlign.Center)
+    }
+}
+
+/** Ofrece registrar la parte propia de un gasto compartido como gasto Personal. */
+@Composable
+private fun PersonalCopyDialog(
+    c: KuodraColors,
+    shareLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.clip(Kuodra.shape.xl).background(c.surface).padding(22.dp),
+        ) {
+            Text("¿Registrar tu parte?", style = Kuodra.type.heading, color = c.ink)
+            Text(
+                "Tu parte de este gasto es $shareLabel. ¿La registramos también como tu gasto personal?",
+                style = Kuodra.type.caption, color = c.ink2, modifier = Modifier.padding(top = 8.dp),
+            )
+            Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.surface2)
+                        .clickable(onClick = onDismiss).padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("Ahora no", style = Kuodra.type.heading, color = c.ink) }
+                Box(
+                    Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.primary)
+                        .clickable(onClick = onConfirm).padding(vertical = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text("Sí, registrar", style = Kuodra.type.heading, color = c.primaryInk) }
+            }
+        }
     }
 }

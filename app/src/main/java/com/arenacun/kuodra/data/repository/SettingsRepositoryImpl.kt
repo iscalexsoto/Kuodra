@@ -1,17 +1,14 @@
 package com.arenacun.kuodra.data.repository
 
-import com.arenacun.kuodra.data.local.KuodraSeedSource
 import com.arenacun.kuodra.data.mapper.toSettlementRecord
 import com.arenacun.kuodra.domain.model.BudgetConfig
 import com.arenacun.kuodra.domain.model.SettlementRecord
 import com.arenacun.kuodra.domain.model.SpaceSettings
-import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.repository.SettingsRepository
 import com.arenacun.kuodra.domain.repository.SnapshotRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -19,49 +16,31 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * Ajustes del espacio. **Personal** es real: presupuesto vía [BudgetRepository] e historial vía
- * [SnapshotRepository] (Room + sync), sobre una base propia sin seed. **Gastos/Caja** siguen en
- * memoria (seed) hasta que entren en alcance.
+ * Ajustes Personal: presupuesto vía [BudgetRepository] e historial vía [SnapshotRepository]
+ * (Room + sync), sobre una base propia. Los ajustes de Gastos viven en Space/Person repos.
  */
 class SettingsRepositoryImpl(
-    private val seed: KuodraSeedSource,
     private val budgetRepository: BudgetRepository,
     private val snapshotRepository: SnapshotRepository,
 ) : SettingsRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    /** Gastos/Caja: ajustes en memoria (sin persistencia aún). */
-    private val others = mutableMapOf<UseCase, MutableStateFlow<SpaceSettings>>()
-
-    private fun otherFlow(useCase: UseCase): MutableStateFlow<SpaceSettings> =
-        others.getOrPut(useCase) { MutableStateFlow(seed.settings(useCase)) }
-
-    /**
-     * Personal: base propia (sin seed) con el presupuesto persistido superpuesto. La UI de Personal
-     * solo usa `budget` + categorías + tema; `name`/`members`/`fund`/`reminder` no se muestran.
-     */
     private val personal: StateFlow<SpaceSettings> = budgetRepository.budget
         .map { budget -> PERSONAL_BASE.copy(budget = budget) }
         .stateIn(scope, SharingStarted.Eagerly, PERSONAL_BASE)
 
-    override fun settings(useCase: UseCase): StateFlow<SpaceSettings> =
-        if (useCase == UseCase.Personal) personal else otherFlow(useCase)
+    override fun settings(): StateFlow<SpaceSettings> = personal
 
-    override fun update(useCase: UseCase, settings: SpaceSettings) {
-        if (useCase == UseCase.Personal) {
-            settings.budget?.let { budget -> scope.launch { budgetRepository.update(budget) } }
-        } else {
-            otherFlow(useCase).value = settings
-        }
+    override fun updateBudget(budget: BudgetConfig) {
+        scope.launch { budgetRepository.update(budget) }
     }
 
-    override fun history(useCase: UseCase): List<SettlementRecord> =
-        if (useCase == UseCase.Personal) snapshotRepository.snapshots.value.map { it.toSettlementRecord() }
-        else seed.history(useCase)
+    override fun history(): List<SettlementRecord> =
+        snapshotRepository.snapshots.value.map { it.toSettlementRecord() }
 
-    override fun historyEntry(useCase: UseCase, id: String): SettlementRecord? =
-        history(useCase).find { it.id == id }
+    override fun historyEntry(id: String): SettlementRecord? =
+        history().find { it.id == id }
 
     private companion object {
         /** Base Personal sin dependencia del seed; el presupuesto real se superpone. */
@@ -69,7 +48,6 @@ class SettingsRepositoryImpl(
             name = "",
             members = emptyList(),
             budget = BudgetConfig.Default,
-            fund = null,
             reminderEnabled = false,
         )
     }

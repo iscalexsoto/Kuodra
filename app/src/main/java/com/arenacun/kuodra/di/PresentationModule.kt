@@ -11,7 +11,6 @@ import com.arenacun.kuodra.presentation.feature.dashboard.DashboardViewModel
 import com.arenacun.kuodra.presentation.feature.history.HistoryDetailViewModel
 import com.arenacun.kuodra.presentation.feature.history.HistoryViewModel
 import com.arenacun.kuodra.presentation.feature.movement.AddMovementViewModel
-import com.arenacun.kuodra.presentation.feature.replenish.ReplenishViewModel
 import com.arenacun.kuodra.presentation.feature.settings.SettingsViewModel
 import com.arenacun.kuodra.presentation.feature.settle.SettleViewModel
 import com.arenacun.kuodra.presentation.feature.movement.MovementDetailViewModel
@@ -37,9 +36,8 @@ val presentationModule = module {
     viewModelOf(::SettingsViewModel)
     viewModelOf(::CategoriesViewModel)
     viewModelOf(::SettleViewModel)
-    viewModelOf(::ReplenishViewModel)
     viewModelOf(::HistoryViewModel)
-    viewModel { AllMovementsViewModel(get(), get(), get()) }
+    viewModel { AllMovementsViewModel(get(), get(), get(), get()) }
 
     // Escaneo de tickets: holder del draft (scope al grafo AddGraph desde el NavHost)
     viewModelOf(::ScanDraftViewModel)
@@ -49,6 +47,6 @@ val presentationModule = module {
     viewModel { params -> AddMovementViewModel(params.getOrNull(), get(), get(), get(), get()) }
     viewModel { (source: ScanSource) -> ScanTicketViewModel(source, get(), get()) }
     viewModel { (useCase: UseCase) -> CreateSpaceViewModel(useCase, get()) }
-    viewModel { (id: String) -> MovementDetailViewModel(id, get(), get(), get()) }
-    viewModel { (id: String) -> HistoryDetailViewModel(id, get(), get()) }
+    viewModel { (id: String) -> MovementDetailViewModel(id, get(), get(), get(), get(), get()) }
+    viewModel { (id: String) -> HistoryDetailViewModel(id, get(), get(), get()) }
 }

@@ -2,7 +2,6 @@ package com.arenacun.kuodra
 
 import android.app.Application
 import com.arenacun.kuodra.data.sync.WorkManagerSyncTrigger
-import com.arenacun.kuodra.di.appModule
 import com.arenacun.kuodra.di.dataModule
 import com.arenacun.kuodra.di.networkModule
 import com.arenacun.kuodra.di.presentationModule
@@ -25,7 +24,7 @@ class KuodraApplication : Application() {
             val koin = startKoin {
                 androidLogger()
                 androidContext(this@KuodraApplication)
-                modules(appModule, networkModule, dataModule, telemetryModule, presentationModule)
+                modules(networkModule, dataModule, telemetryModule, presentationModule)
             }.koin
             // Sincronización periódica de respaldo (la sesión se valida dentro del worker).
             koin.get<WorkManagerSyncTrigger>().schedulePeriodic()

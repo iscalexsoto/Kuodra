@@ -19,6 +19,7 @@ fun BudgetEntity.toConfig(): BudgetConfig = BudgetConfig(
     secondDay = secondDay,
     monthlyDay = monthlyDay,
     customInterval = customInterval,
+    returnPercent = returnPercent,
 )
 
 fun BudgetConfig.toEntity(
@@ -37,6 +38,7 @@ fun BudgetConfig.toEntity(
     secondDay = secondDay,
     monthlyDay = monthlyDay,
     customInterval = customInterval,
+    returnPercent = returnPercent,
     updatedAt = updatedAt,
     deleted = deleted,
     dirty = dirty,
@@ -55,6 +57,7 @@ fun BudgetEntity.toDto(): BudgetDto = BudgetDto(
     secondDay = secondDay,
     monthlyDay = monthlyDay,
     customInterval = customInterval,
+    returnPercent = returnPercent,
     deleted = deleted,
     updated = remoteUpdated,
 )
@@ -69,6 +72,7 @@ fun BudgetDto.toEntity(owner: String): BudgetEntity = BudgetEntity(
     secondDay = secondDay,
     monthlyDay = monthlyDay,
     customInterval = customInterval,
+    returnPercent = returnPercent,
     updatedAt = System.currentTimeMillis(),
     deleted = deleted,
     dirty = false,

@@ -10,8 +10,10 @@ import com.arenacun.kuodra.data.repository.AuthRepositoryImpl
 import com.arenacun.kuodra.data.repository.BudgetRepository
 import com.arenacun.kuodra.data.repository.CategoryRepositoryImpl
 import com.arenacun.kuodra.data.repository.MovementRepositoryImpl
+import com.arenacun.kuodra.data.repository.PersonRepositoryImpl
 import com.arenacun.kuodra.data.repository.PreferencesRepositoryImpl
 import com.arenacun.kuodra.data.repository.SettingsRepositoryImpl
+import com.arenacun.kuodra.data.repository.SettlementRepositoryImpl
 import com.arenacun.kuodra.data.repository.SnapshotRepositoryImpl
 import com.arenacun.kuodra.data.repository.SpaceRepositoryImpl
 import com.arenacun.kuodra.data.repository.SummaryRepositoryImpl
@@ -24,8 +26,10 @@ import com.arenacun.kuodra.data.sync.WorkManagerSyncTrigger
 import com.arenacun.kuodra.domain.repository.AuthRepository
 import com.arenacun.kuodra.domain.repository.CategoryRepository
 import com.arenacun.kuodra.domain.repository.MovementRepository
+import com.arenacun.kuodra.domain.repository.PersonRepository
 import com.arenacun.kuodra.domain.repository.PreferencesRepository
 import com.arenacun.kuodra.domain.repository.SettingsRepository
+import com.arenacun.kuodra.domain.repository.SettlementRepository
 import com.arenacun.kuodra.domain.repository.SnapshotRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
@@ -65,11 +69,22 @@ val dataModule = module {
     single { get<KuodraDatabase>().budgetDao() }
     single { get<KuodraDatabase>().periodSnapshotDao() }
     single { get<KuodraDatabase>().telemetryDao() }
+    single { get<KuodraDatabase>().spaceDao() }
+    single { get<KuodraDatabase>().personDao() }
+    single { get<KuodraDatabase>().settlementDao() }
 
     // Sincronización (push/pull + agendado con WorkManager)
     single { SyncCursorStore(get()) }
     single { WorkManagerSyncTrigger(androidContext()) } bind SyncTrigger::class
-    single { SyncManager(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    // Orden POSICIONAL: 7 APIs (movement, category, budget, snapshot, space, person, settlement),
+    // luego 7 DAOs en el mismo orden, luego sessionStore y cursors.
+    single {
+        SyncManager(
+            get(), get(), get(), get(), get(), get(), get(),
+            get(), get(), get(), get(), get(), get(), get(),
+            get(), get(),
+        )
+    }
 
     // Escaneo de tickets: OCR (MLKit) + cadena de parsers en orden de prioridad
     // (Mistral remoto → regex local). Futuro: insertar el TemplateTicketParser al frente.
@@ -85,12 +100,14 @@ val dataModule = module {
     }
 
     single { AuthRepositoryImpl(get(), get(), get(), get()) } bind AuthRepository::class
-    single { SpaceRepositoryImpl(get()) } bind SpaceRepository::class
+    single { SpaceRepositoryImpl(get(), get(), get(), get()) } bind SpaceRepository::class
+    single { PersonRepositoryImpl(get(), get(), get()) } bind PersonRepository::class
+    single { SettlementRepositoryImpl(get(), get(), get(), get()) } bind SettlementRepository::class
     single { CategoryRepositoryImpl(get(), get(), get()) } bind CategoryRepository::class
-    single { MovementRepositoryImpl(get(), get(), get(), get()) } bind MovementRepository::class
-    single { SummaryRepositoryImpl(get(), get()) } bind SummaryRepository::class
+    single { MovementRepositoryImpl(get(), get(), get()) } bind MovementRepository::class
+    single { SummaryRepositoryImpl(get()) } bind SummaryRepository::class
     single { BudgetRepository(get(), get(), get()) }
     single { SnapshotRepositoryImpl(get(), get(), get()) } bind SnapshotRepository::class
-    single { SettingsRepositoryImpl(get(), get(), get()) } bind SettingsRepository::class
+    single { SettingsRepositoryImpl(get(), get()) } bind SettingsRepository::class
     single { PreferencesRepositoryImpl(get()) } bind PreferencesRepository::class
 }

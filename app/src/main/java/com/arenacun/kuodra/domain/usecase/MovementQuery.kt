@@ -37,12 +37,13 @@ object MovementQuery {
         filter: MovementFilter,
         today: LocalDate,
         categoryName: (Movement) -> String,
+        payerNames: (Movement) -> List<String> = { emptyList() },
     ): List<Movement> {
         val q = filter.query.trim().lowercase()
         return movements.filter { m ->
-            (q.isEmpty() || matchesQuery(m, q, categoryName(m))) &&
+            (q.isEmpty() || matchesQuery(m, q, categoryName(m), payerNames(m))) &&
                 (filter.categories.isEmpty() || categoryName(m) in filter.categories) &&
-                (filter.responsibles.isEmpty() || (m.payer != null && m.payer in filter.responsibles)) &&
+                (filter.responsibles.isEmpty() || payerNames(m).any { it in filter.responsibles }) &&
                 inPeriod(m.date, filter.period, today)
         }
     }
@@ -54,11 +55,11 @@ object MovementQuery {
             .groupBy { it.date }
             .map { (date, list) -> MovementGroup(DateLabels.groupHeader(date, today), list) }
 
-    private fun matchesQuery(m: Movement, q: String, catName: String): Boolean =
+    private fun matchesQuery(m: Movement, q: String, catName: String, payerNames: List<String>): Boolean =
         m.title.lowercase().contains(q) ||
             catName.lowercase().contains(q) ||
             m.note.lowercase().contains(q) ||
-            (m.payer?.lowercase()?.contains(q) ?: false)
+            payerNames.any { it.lowercase().contains(q) }
 
     private fun inPeriod(date: LocalDate, period: MovementPeriod, today: LocalDate): Boolean = when (period) {
         MovementPeriod.All -> true

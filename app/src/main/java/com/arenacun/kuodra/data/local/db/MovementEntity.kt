@@ -22,14 +22,26 @@ data class MovementEntity(
     val title: String,
     val note: String,
     val date: LocalDate,
-    val payer: String?,
-    val splitNames: List<String>,
+    /** Espacio de Gastos al que pertenece; `""` = Personal. */
+    val space: String = "",
+    /** Pagadores del gasto serializados como JSON (`[]` = sin pagadores; Gastos). */
+    val payersJson: String = "[]",
+    /** Modo de división elegido en la captura (`None`/`Equal`/`Amount`/`Percent`). */
+    val splitMode: String = "None",
+    /** División resuelta a centavos, serializada como JSON (`[]` = sin división; Gastos). */
+    val splitsJson: String = "[]",
+    /** Id del corte que liquidó este gasto; `""` = vivo. */
+    val settlementId: String = "",
     /** Desglose en partidas serializado como JSON (`[]` = sin detalle). */
     val itemsJson: String = "[]",
     /** Raw OCR del ticket si nació de un escaneo (material para templates futuros). */
     val scanRawText: String? = null,
     /** Nombre del enum `ScanSource` (`Camera`/`Gallery`); null = captura manual. */
     val scanSource: String? = null,
+    /** Nombre del enum `ReturnStatus` (`None`/`Pending`/`Returned`). */
+    val returnStatus: String = "None",
+    /** % de devolución congelado al marcar `Returned`; null mientras None/Pending. */
+    val returnPercent: Int? = null,
     val updatedAt: Long,
     val deleted: Boolean,
     val dirty: Boolean,

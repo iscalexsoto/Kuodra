@@ -18,6 +18,8 @@ data class BudgetEntity(
     val secondDay: Int,
     val monthlyDay: Int,
     val customInterval: Int,
+    /** % global a devolver de los movimientos "Por devolver" (5..100). */
+    val returnPercent: Int = 75,
     val updatedAt: Long,
     val deleted: Boolean,
     val dirty: Boolean,

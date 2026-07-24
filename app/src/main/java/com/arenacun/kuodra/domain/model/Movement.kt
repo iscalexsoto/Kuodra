@@ -17,16 +17,26 @@ data class Movement(
     val note: String = "",
     /** Fecha real del movimiento (para agrupar/filtrar y para los periodos de presupuesto). */
     val date: LocalDate = LocalDate.now(),
-    /** Quién pagó/reportó (Gastos/Caja); null en Personal. */
-    val payer: String? = null,
-    /** Personas entre las que se divide el gasto (Gastos). */
-    val splitNames: List<String> = emptyList(),
+    /** Espacio de Gastos al que pertenece; `""` = Personal. */
+    val spaceId: String = "",
+    /** Quién puso el dinero (Gastos); puede haber varios pagadores. Vacío en Personal. */
+    val payers: List<PayerShare> = emptyList(),
+    /** Modo de división elegido en la captura (para re-poblar la UI al editar). */
+    val splitMode: SplitMode = SplitMode.None,
+    /** División ya resuelta a centavos exactos (Gastos); suma el total. Vacío en Personal. */
+    val splits: List<SplitShare> = emptyList(),
+    /** Id del corte que liquidó este gasto; `""` = vivo (cuenta en los balances). */
+    val settlementId: String = "",
     /** Desglose interno opcional en partidas (concepto + cantidad). Vacío = sin detalle. */
     val items: List<MovementItem> = emptyList(),
     /** Raw OCR del ticket si el movimiento nació de un escaneo (material para templates futuros). */
     val scanRawText: String? = null,
     /** Origen del escaneo (cámara/galería); null = captura manual. */
     val scanSource: ScanSource? = null,
+    /** Estado de devolución (solo Personal). Por defecto no participa. */
+    val returnStatus: ReturnStatus = ReturnStatus.None,
+    /** % de devolución congelado al marcar [ReturnStatus.Returned]; null mientras None/Pending. */
+    val returnPercent: Int? = null,
 )
 
 /**
@@ -40,8 +50,8 @@ data class MovementItem(
     val amount: Money,
     /** Gastos (futuro): quién pagó esta partida; null = el pagador del movimiento. */
     val payer: String? = null,
-    /** Caja (futuro): si la partida entra al fondo. true por defecto. */
-    val inFund: Boolean = true,
+    /** Personal: si esta partida se incluye en la devolución cuando el movimiento está "Por devolver". */
+    val returnable: Boolean = true,
 )
 
 /** Monto no detallado: total − suma de partidas (puede ser negativo si exceden el total). */
@@ -54,9 +64,9 @@ fun initialsOf(name: String): String = name.trim().take(1).uppercase()
 /** Tono de avatar determinístico por nombre conocido. */
 fun toneForName(name: String): AvatarTone = when (name) {
     "Tú" -> AvatarTone.Tint
-    "Andrea", "Luis" -> AvatarTone.Tint
-    "Caro", "Mar" -> AvatarTone.Pos
-    "Diego", "Sol" -> AvatarTone.Warn
+    "Andrea" -> AvatarTone.Tint
+    "Caro" -> AvatarTone.Pos
+    "Diego" -> AvatarTone.Warn
     "Beto" -> AvatarTone.Neg
     else -> AvatarTone.Tint
 }

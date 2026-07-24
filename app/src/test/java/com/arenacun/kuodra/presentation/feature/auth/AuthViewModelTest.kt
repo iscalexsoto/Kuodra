@@ -48,9 +48,15 @@ class AuthViewModelTest {
     }
 
     private class FakeSpaceRepository(private val configured: Boolean) : SpaceRepository {
-        override val activeSpace: StateFlow<Space> = MutableStateFlow(Space(UseCase.Personal))
-        override fun selectUseCase(useCase: UseCase) = Unit
-        override fun createSpace(useCase: UseCase, name: String) = Unit
+        override val activeSpace: StateFlow<Space> = MutableStateFlow(Space.PERSONAL)
+        override val spaces: kotlinx.coroutines.flow.Flow<List<Space>> = MutableStateFlow(emptyList())
+        override fun selectPersonal() = Unit
+        override fun selectSpace(id: String) = Unit
+        override suspend fun createSpace(name: String): Space = Space.PERSONAL
+        override suspend fun rename(id: String, name: String) = Unit
+        override suspend fun setReminder(id: String, enabled: Boolean) = Unit
+        override suspend fun archive(id: String) = Unit
+        override suspend fun unarchive(id: String) = Unit
         override suspend fun isConfigured(): Boolean = configured
     }
 
