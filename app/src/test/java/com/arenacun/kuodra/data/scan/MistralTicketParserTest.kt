@@ -1,36 +1,30 @@
 package com.arenacun.kuodra.data.scan
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import com.arenacun.kuodra.MainDispatcherRule
-import com.arenacun.kuodra.data.local.SessionStore
+import com.arenacun.kuodra.TestPrefsRule
 import com.arenacun.kuodra.data.remote.TicketAnalysisApi
 import com.arenacun.kuodra.data.remote.dto.AnalyzedItemDto
 import com.arenacun.kuodra.data.remote.dto.TicketAnalysisDto
 import com.arenacun.kuodra.domain.scan.TicketParseSource
 import com.arenacun.kuodra.domain.telemetry.NoOpTelemetry
 import java.time.LocalDate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MistralTicketParserTest {
 
     @get:Rule
-    val mainDispatcherRule = MainDispatcherRule()
+    val prefs = TestPrefsRule()
 
-    @get:Rule
-    val tmp = TemporaryFolder()
-
-    private fun sessionStore(): SessionStore {
-        val dataStore = PreferenceDataStoreFactory.create { tmp.newFile("scan.preferences_pb") }
-        return SessionStore(dataStore)
-    }
+    private fun sessionStore() = prefs.sessionStore("scan.preferences_pb")
 
     private class FakeTicketAnalysisApi(
         var response: TicketAnalysisDto = TicketAnalysisDto(),
@@ -90,6 +84,25 @@ class MistralTicketParserTest {
         val parser = MistralTicketParser(api, session, NoOpTelemetry)
 
         assertNull(parser.parse("TEXTO"))
+    }
+
+    /**
+     * `runBlocking` en vez de `runTest`: la aserción es que `parse` LANZA la cancelación, y dejar que
+     * una `CancellationException` escape del cuerpo de un `runTest` se confunde con que el test mismo
+     * se canceló.
+     */
+    @Test
+    fun `a cancellation propagates instead of degrading to the next parser`() {
+        val api = FakeTicketAnalysisApi(throws = CancellationException("el usuario salió"))
+        val parser = runBlocking {
+            val session = sessionStore().apply { save("tok_1", "u1", "u1@x.com", "U") }
+            MistralTicketParser(api, session, NoOpTelemetry)
+        }
+
+        // Cancelarse no es "no pude parsear": tragarlo rompería la cancelación cooperativa.
+        assertThrows(CancellationException::class.java) {
+            runBlocking { parser.parse("TEXTO") }
+        }
     }
 
     @Test

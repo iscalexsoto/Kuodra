@@ -7,6 +7,7 @@ import com.arenacun.kuodra.domain.scan.ParsedTicket
 import com.arenacun.kuodra.domain.scan.TicketParseSource
 import com.arenacun.kuodra.domain.scan.TicketParser
 import com.arenacun.kuodra.domain.telemetry.Telemetry
+import kotlinx.coroutines.CancellationException
 
 /**
  * Eslabón remoto de la cadena de parseo: manda el OCR normalizado al proxy Mistral de PocketBase.
@@ -25,6 +26,8 @@ class MistralTicketParser(
         val token = sessionStore.token() ?: return null
         return runCatching { api.analyze(normalizedText, token).toParsedTicket() }
             .onFailure {
+                // La cancelación no es un fallo del parseo: se propaga en vez de degradar a regex.
+                if (it is CancellationException) throw it
                 telemetry.breadcrumb("scan", "mistral parse failed", mapOf("error" to it.message.orEmpty()))
             }
             .getOrNull()

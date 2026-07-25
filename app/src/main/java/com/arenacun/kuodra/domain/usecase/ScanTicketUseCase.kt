@@ -8,6 +8,7 @@ import com.arenacun.kuodra.domain.scan.TicketParseSource
 import com.arenacun.kuodra.domain.scan.TicketParser
 import com.arenacun.kuodra.domain.scan.TicketScan
 import com.arenacun.kuodra.domain.telemetry.Telemetry
+import kotlinx.coroutines.CancellationException
 
 /**
  * Orquestador del escaneo de tickets: OCR → [OcrNormalizer] → cadena de [TicketParser] en orden
@@ -23,12 +24,17 @@ class ScanTicketUseCase(
 
     suspend operator fun invoke(imageUri: String, scanSource: ScanSource): Result<TicketScan> {
         val raw = ocrEngine.recognize(imageUri).getOrElse {
+            // Salir de la pantalla cancela el escaneo: no es un fallo del OCR y no se reporta.
+            if (it is CancellationException) throw it
             telemetry.capture(it, context = mapOf("scan.step" to "ocr", "scan.source" to scanSource.name))
             return Result.failure(it)
         }
         val normalized = OcrNormalizer.normalize(raw)
         val parsed = parsers.firstNotNullOfOrNull { parser ->
-            runCatching { parser.parse(normalized) }.getOrNull()
+            runCatching { parser.parse(normalized) }
+                // Un parser que se cancela no "falla": no se sigue con el resto de la cadena.
+                .onFailure { if (it is CancellationException) throw it }
+                .getOrNull()
         } ?: ParsedTicket(source = TicketParseSource.Regex)
         telemetry.breadcrumb(
             "scan",

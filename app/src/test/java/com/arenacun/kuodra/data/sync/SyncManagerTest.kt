@@ -1,6 +1,6 @@
 package com.arenacun.kuodra.data.sync
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import com.arenacun.kuodra.TestPrefsRule
 import com.arenacun.kuodra.data.local.SessionStore
 import com.arenacun.kuodra.data.local.db.BudgetDao
 import com.arenacun.kuodra.data.local.db.BudgetEntity
@@ -38,13 +38,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 import java.time.LocalDate
 
 class SyncManagerTest {
 
     @get:Rule
-    val tmp = TemporaryFolder()
+    val prefs = TestPrefsRule()
 
     private class Env(val manager: SyncManager, val session: SessionStore, val cursors: SyncCursorStore)
 
@@ -56,7 +55,7 @@ class SyncManagerTest {
         personApi: PersonApi = EmptyPersonApi(),
         personDao: PersonDao = EmptyPersonDao(),
     ): Env {
-        val dataStore = PreferenceDataStoreFactory.create { tmp.newFile("sync.preferences_pb") }
+        val dataStore = prefs.dataStore("sync.preferences_pb")
         val session = SessionStore(dataStore)
         val cursors = SyncCursorStore(dataStore)
         val manager = SyncManager(

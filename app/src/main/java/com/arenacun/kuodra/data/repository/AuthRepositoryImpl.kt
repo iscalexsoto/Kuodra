@@ -33,9 +33,9 @@ class AuthRepositoryImpl(
     private val telemetry: Telemetry = NoOpTelemetry,
     /** Redirect del OAuth2 (App Link HTTPS); debe coincidir con Google console y el manifest. */
     private val oauthRedirectUrl: String = BuildConfig.OAUTH_REDIRECT_URL,
+    /** Scope del `stateIn` de la sesión; en tests se pasa `backgroundScope`. */
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) : AuthRepository {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     /** `otpId` de la última solicitud; enlaza request-otp con auth-with-otp. */
     private var pendingOtpId: String? = null

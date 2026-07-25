@@ -41,9 +41,9 @@ class SpaceRepositoryImpl(
     private val dao: SpaceDao,
     private val sessionStore: SessionStore,
     private val syncTrigger: SyncTrigger,
+    /** Scope de las escrituras fire-and-forget y del `stateIn`; en tests se pasa `backgroundScope`. */
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : SpaceRepository {
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override val spaces: Flow<List<Space>> =
         sessionStore.sessionFlow.flatMapLatest { session ->
@@ -63,11 +63,13 @@ class SpaceRepositoryImpl(
         }.stateIn(scope, SharingStarted.Eagerly, Space.PERSONAL)
 
     override fun selectPersonal() {
-        scope.launch {
-            dataStore.edit {
-                it[USE_CASE] = UseCase.Personal.name
-                it.remove(SPACE_ID)
-            }
+        scope.launch { persistPersonal() }
+    }
+
+    private suspend fun persistPersonal() {
+        dataStore.edit {
+            it[USE_CASE] = UseCase.Personal.name
+            it.remove(SPACE_ID)
         }
     }
 
@@ -101,8 +103,9 @@ class SpaceRepositoryImpl(
     override suspend fun setReminder(id: String, enabled: Boolean) = mutate(id) { it.copy(reminderEnabled = enabled) }
     override suspend fun archive(id: String) {
         mutate(id) { it.copy(archived = true) }
-        // Si era el activo, vuelve a Personal.
-        if (dataStore.data.first()[SPACE_ID] == id) selectPersonal()
+        // Si era el activo, vuelve a Personal. Se ESPERA la escritura (no `selectPersonal()`): al
+        // retornar, el puntero ya quedó persistido y no hay corrutina suelta que falle más tarde.
+        if (dataStore.data.first()[SPACE_ID] == id) persistPersonal()
     }
     override suspend fun unarchive(id: String) = mutate(id) { it.copy(archived = false) }
     override suspend fun setSplitRule(id: String, rule: SplitRule) =

@@ -177,6 +177,27 @@ Toda la lógica no trivial vive como **funciones/objetos puros** en `domain` (us
 La UI (`KuodraCalculator`, `KuodraCalendar`) es **stateless**: dibuja el modelo puro y reenvía
 intenciones. Patrón a repetir para cualquier lógica nueva (p. ej. liquidación real).
 
+### Nada vivo al terminar un test (scopes y DataStore)
+`kotlinx-coroutines-test` recoge en un handler **global** las excepciones sin capturar de cualquier
+corrutina del JVM y las reporta en el **siguiente** `runTest` (`UncaughtExceptionsBeforeTest`). Una
+corrutina que sobreviva a su test no falla donde está el bug: hace fallar un test ajeno, y de forma
+intermitente según el orden de clases (la suite entera corre en un solo JVM). Reglas:
+
+- **DataStore de test siempre vía `TestPrefsRule`** (`prefs.dataStore(...)` / `prefs.sessionStore(...)`),
+  nunca `PreferenceDataStoreFactory.create { … }` a pelo: ese overload usa por defecto un scope que
+  nunca se cancela. La regla posee la carpeta temporal y garantiza el orden cancelar → borrar.
+- **Todo objeto de producción con `CoroutineScope` interno lo recibe por constructor** (con el default
+  de producción, como `SpaceRepositoryImpl`, `AuthRepositoryImpl` y `PocketBaseTelemetry`) y en tests se
+  le pasa `backgroundScope` de `runTest`: se cancela al acabar el cuerpo del test y su trabajo queda
+  bajo el reloj virtual, así que lo que se lance sin esperar es observable en vez de una carrera.
+- Si un `suspend fun` tiene que dejar algo escrito al retornar, **espera la escritura**; no la dispares
+  con un `scope.launch`. Ver `SpaceRepositoryImpl.archive` → `persistPersonal()` y su test de regresión.
+- Cancelarse **no es un fallo**: `runCatching` también atrapa `CancellationException`, así que en la
+  cadena de escaneo (`MistralTicketParser`, `ScanTicketUseCase`) se relanza en vez de degradar al
+  siguiente parser y mandar telemetría de un error que no existió.
+- **No leas el reloj real dos veces** si vas a comparar los valores: cruzar la medianoche entre dos
+  `LocalDate.now()` rompe la comparación. Fija la fecha o captura un único `now()` y deriva de ahí.
+
 ### Estado de pantalla y overlays
 - `UiState` inmutable en `StateFlow`; derivados con `combine`/`flatMapLatest` + `stateIn(...WhileSubscribed(5_000))`.
 - **Los overlays (diálogos/sheets/pasos) son estado del ViewModel**, no `remember`. Excepción:

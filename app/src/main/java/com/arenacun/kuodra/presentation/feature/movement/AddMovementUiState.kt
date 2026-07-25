@@ -34,8 +34,9 @@ enum class SplitSheet { AddPayer, AddParticipant }
  */
 data class AddMovementUiState(
     val concept: String = "",
-    val date: LocalDate = LocalDate.now(),
     val today: LocalDate = LocalDate.now(),
+    /** Un solo `now()`: si se leyera el reloj dos veces podrían caer en días distintos. */
+    val date: LocalDate = today,
     /** Monto confirmado desde la calculadora (null = aún sin capturar). */
     val amount: Double? = null,
     /** Estado de trabajo de la calculadora mientras el diálogo está abierto. */

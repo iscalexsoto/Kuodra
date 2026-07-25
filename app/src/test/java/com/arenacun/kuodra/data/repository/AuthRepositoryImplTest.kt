@@ -1,8 +1,7 @@
 package com.arenacun.kuodra.data.repository
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.arenacun.kuodra.MainDispatcherRule
-import com.arenacun.kuodra.data.local.SessionStore
+import com.arenacun.kuodra.TestPrefsRule
 import com.arenacun.kuodra.data.remote.AuthApi
 import com.arenacun.kuodra.data.remote.dto.AuthMethodsResponse
 import com.arenacun.kuodra.data.remote.dto.AuthResponse
@@ -20,7 +19,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AuthRepositoryImplTest {
@@ -29,12 +27,9 @@ class AuthRepositoryImplTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @get:Rule
-    val tmp = TemporaryFolder()
+    val prefs = TestPrefsRule()
 
-    private fun sessionStore(): SessionStore {
-        val dataStore = PreferenceDataStoreFactory.create { tmp.newFile("test.preferences_pb") }
-        return SessionStore(dataStore)
-    }
+    private fun sessionStore() = prefs.sessionStore()
 
     /** AuthApi en memoria; permite forzar fallos por endpoint. */
     private class FakeAuthApi(
@@ -103,7 +98,7 @@ class AuthRepositoryImplTest {
     fun `requestOtp gives alta then verifyOtp persists session`() = runTest {
         val store = sessionStore()
         val api = FakeAuthApi()
-        val repo = AuthRepositoryImpl(api, store)
+        val repo = AuthRepositoryImpl(api, store, scope = backgroundScope)
 
         val requested = repo.requestOtp("  alex@correo.com ")
         assertTrue(requested.isSuccess)
@@ -122,7 +117,7 @@ class AuthRepositoryImplTest {
     @Test
     fun `requestOtp ignores duplicate-user error from createUser`() = runTest {
         val api = FakeAuthApi(createUserThrows = RuntimeException("email already exists"))
-        val repo = AuthRepositoryImpl(api, sessionStore())
+        val repo = AuthRepositoryImpl(api, sessionStore(), scope = backgroundScope)
 
         val result = repo.requestOtp("alex@correo.com")
 
@@ -133,7 +128,7 @@ class AuthRepositoryImplTest {
     @Test
     fun `verifyOtp without a prior request fails`() = runTest {
         val store = sessionStore()
-        val repo = AuthRepositoryImpl(FakeAuthApi(), store)
+        val repo = AuthRepositoryImpl(FakeAuthApi(), store, scope = backgroundScope)
 
         val result = repo.verifyOtp("123456")
 
@@ -145,7 +140,7 @@ class AuthRepositoryImplTest {
     fun `verifyOtp with wrong code fails and keeps no session`() = runTest {
         val store = sessionStore()
         val api = FakeAuthApi(authWithOtpThrows = RuntimeException("invalid otp"))
-        val repo = AuthRepositoryImpl(api, store)
+        val repo = AuthRepositoryImpl(api, store, scope = backgroundScope)
 
         repo.requestOtp("alex@correo.com")
         val result = repo.verifyOtp("000000")
@@ -158,7 +153,7 @@ class AuthRepositoryImplTest {
     fun `verifyOtp propagates the record name into the session`() = runTest {
         val store = sessionStore()
         val api = FakeAuthApi(record = UserRecordDto("u1", "alex@correo.com", "Alex"))
-        val repo = AuthRepositoryImpl(api, store)
+        val repo = AuthRepositoryImpl(api, store, scope = backgroundScope)
 
         repo.requestOtp("alex@correo.com")
         repo.verifyOtp("123456")
@@ -170,7 +165,7 @@ class AuthRepositoryImplTest {
     fun `updateName PATCHes and updates the persisted session`() = runTest {
         val store = sessionStore()
         val api = FakeAuthApi()
-        val repo = AuthRepositoryImpl(api, store)
+        val repo = AuthRepositoryImpl(api, store, scope = backgroundScope)
         repo.requestOtp("alex@correo.com")
         repo.verifyOtp("123456")
 
@@ -184,7 +179,7 @@ class AuthRepositoryImplTest {
 
     @Test
     fun `updateName without a session fails`() = runTest {
-        val repo = AuthRepositoryImpl(FakeAuthApi(), sessionStore())
+        val repo = AuthRepositoryImpl(FakeAuthApi(), sessionStore(), scope = backgroundScope)
 
         val result = repo.updateName("Diego")
 
@@ -195,7 +190,7 @@ class AuthRepositoryImplTest {
     fun `updateName keeps the previous name when the server fails`() = runTest {
         val store = sessionStore()
         val api = FakeAuthApi(record = UserRecordDto("u1", "alex@correo.com", "Alex"))
-        val repo = AuthRepositoryImpl(api, store)
+        val repo = AuthRepositoryImpl(api, store, scope = backgroundScope)
         repo.requestOtp("alex@correo.com")
         repo.verifyOtp("123456")
         api.updateUserThrows = RuntimeException("network down")
@@ -209,7 +204,10 @@ class AuthRepositoryImplTest {
     @Test
     fun `startGoogleSignIn returns the authURL with the appended redirect`() = runTest {
         val api = FakeAuthApi()
-        val repo = AuthRepositoryImpl(api, sessionStore(), oauthRedirectUrl = "https://kuodra.app/oauth-redirect")
+        val repo = AuthRepositoryImpl(
+            api, sessionStore(),
+            oauthRedirectUrl = "https://kuodra.app/oauth-redirect", scope = backgroundScope,
+        )
 
         val result = repo.startGoogleSignIn()
 
@@ -222,7 +220,7 @@ class AuthRepositoryImplTest {
     @Test
     fun `startGoogleSignIn fails when google provider is not enabled`() = runTest {
         val api = FakeAuthApi(oauthProviders = emptyList())
-        val repo = AuthRepositoryImpl(api, sessionStore())
+        val repo = AuthRepositoryImpl(api, sessionStore(), scope = backgroundScope)
 
         assertTrue(repo.startGoogleSignIn().isFailure)
     }
@@ -231,7 +229,7 @@ class AuthRepositoryImplTest {
     fun `completeOAuth2 with matching state persists the session`() = runTest {
         val store = sessionStore()
         val api = FakeAuthApi(record = UserRecordDto("g1", "gmail@correo.com", "Alex G"))
-        val repo = AuthRepositoryImpl(api, store, oauthRedirectUrl = "https://kuodra.app/oauth-redirect")
+        val repo = AuthRepositoryImpl(api, store, oauthRedirectUrl = "https://kuodra.app/oauth-redirect", scope = backgroundScope)
         repo.startGoogleSignIn()
 
         val result = repo.completeOAuth2(code = "auth_code", state = "st_1")
@@ -250,7 +248,7 @@ class AuthRepositoryImplTest {
             record = UserRecordDto("g1", "gmail@correo.com", name = ""),
             oauthMeta = OAuthMeta(name = "Alex from Google"),
         )
-        val repo = AuthRepositoryImpl(api, store)
+        val repo = AuthRepositoryImpl(api, store, scope = backgroundScope)
         repo.startGoogleSignIn()
 
         repo.completeOAuth2(code = "auth_code", state = "st_1")
@@ -262,7 +260,7 @@ class AuthRepositoryImplTest {
     fun `completeOAuth2 with mismatched state fails and keeps no session`() = runTest {
         val store = sessionStore()
         val api = FakeAuthApi()
-        val repo = AuthRepositoryImpl(api, store)
+        val repo = AuthRepositoryImpl(api, store, scope = backgroundScope)
         repo.startGoogleSignIn()
 
         val result = repo.completeOAuth2(code = "auth_code", state = "forged")
@@ -274,7 +272,7 @@ class AuthRepositoryImplTest {
 
     @Test
     fun `completeOAuth2 without a prior startGoogleSignIn fails`() = runTest {
-        val repo = AuthRepositoryImpl(FakeAuthApi(), sessionStore())
+        val repo = AuthRepositoryImpl(FakeAuthApi(), sessionStore(), scope = backgroundScope)
 
         assertTrue(repo.completeOAuth2(code = "c", state = "s").isFailure)
     }
@@ -282,7 +280,7 @@ class AuthRepositoryImplTest {
     @Test
     fun `signOut clears the persisted session`() = runTest {
         val store = sessionStore()
-        val repo = AuthRepositoryImpl(FakeAuthApi(), store)
+        val repo = AuthRepositoryImpl(FakeAuthApi(), store, scope = backgroundScope)
         repo.requestOtp("alex@correo.com")
         repo.verifyOtp("123456")
         assertNotNull(store.sessionFlow.first())

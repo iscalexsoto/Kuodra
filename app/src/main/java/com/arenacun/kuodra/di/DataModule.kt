@@ -1,5 +1,6 @@
 package com.arenacun.kuodra.di
 
+import android.util.Log
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
@@ -36,8 +37,10 @@ import com.arenacun.kuodra.domain.repository.SummaryRepository
 import com.arenacun.kuodra.domain.scan.OcrEngine
 import com.arenacun.kuodra.domain.scan.RegexTicketParser
 import com.arenacun.kuodra.domain.usecase.ScanTicketUseCase
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.koin.android.ext.koin.androidContext
 import org.koin.dsl.bind
@@ -59,7 +62,15 @@ val dataModule = module {
             .fallbackToDestructiveMigration(dropAllTables = true)
             .addCallback(object : RoomDatabase.Callback() {
                 override fun onDestructiveMigration(db: SupportSQLiteDatabase) {
-                    CoroutineScope(Dispatchers.IO).launch { cursors.clear() }
+                    // Scope con SupervisorJob + handler propio: si el borrado de cursores falla, se
+                    // registra aquí en vez de escalar al handler global de corrutinas (que en tests
+                    // acabaría achacándole la excepción a un `runTest` cualquiera). No se usa el
+                    // puerto Telemetry porque encola en esta misma base: sería una dependencia
+                    // circular con la instancia que se está construyendo.
+                    val handler = CoroutineExceptionHandler { _, e ->
+                        Log.e("Kuodra", "no se pudieron limpiar los cursores de sync", e)
+                    }
+                    CoroutineScope(SupervisorJob() + Dispatchers.IO + handler).launch { cursors.clear() }
                 }
             })
             .build()

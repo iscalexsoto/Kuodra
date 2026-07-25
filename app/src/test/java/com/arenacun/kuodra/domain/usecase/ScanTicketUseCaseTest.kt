@@ -9,9 +9,12 @@ import com.arenacun.kuodra.domain.scan.TicketParseSource
 import com.arenacun.kuodra.domain.scan.TicketParser
 import com.arenacun.kuodra.domain.telemetry.LogLevel
 import com.arenacun.kuodra.domain.telemetry.Telemetry
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -27,18 +30,18 @@ class ScanTicketUseCaseTest {
         }
     }
 
-    /** Parser configurable: devuelve [ticket], lanza, o registra que fue llamado. */
+    /** Parser configurable: devuelve [ticket], lanza [throws], o registra que fue llamado. */
     private class FakeParser(
         override val source: TicketParseSource,
         private val ticket: ParsedTicket? = null,
-        private val throws: Boolean = false,
+        private val throws: Throwable? = null,
     ) : TicketParser {
         var called = false
         var lastText: String? = null
         override suspend fun parse(normalizedText: String): ParsedTicket? {
             called = true
             lastText = normalizedText
-            if (throws) error("parser roto")
+            throws?.let { throw it }
             return ticket
         }
     }
@@ -93,7 +96,7 @@ class ScanTicketUseCaseTest {
 
     @Test
     fun `a throwing parser does not break the chain`() = runTest {
-        val broken = FakeParser(TicketParseSource.Mistral, throws = true)
+        val broken = FakeParser(TicketParseSource.Mistral, throws = IllegalStateException("parser roto"))
         val regex = FakeParser(TicketParseSource.Regex, ticket = ParsedTicket(source = TicketParseSource.Regex))
         val useCase = ScanTicketUseCase(FakeOcrEngine(), listOf(broken, regex), FakeTelemetry())
 
@@ -115,6 +118,35 @@ class ScanTicketUseCaseTest {
         assertEquals(boom, result.exceptionOrNull())
         assertEquals(listOf<Throwable>(boom), telemetry.captured)
         assertTrue(!parser.called)
+    }
+
+    /**
+     * Cancelar (salir de la pantalla) NO es un fallo del escaneo: no se degrada al siguiente parser ni
+     * se reporta. `runBlocking` porque dejar escapar una `CancellationException` del cuerpo de un
+     * `runTest` se confunde con que el test mismo se canceló.
+     */
+    @Test
+    fun `a cancelled parser propagates and does not fall through the chain`() {
+        val cancelled = FakeParser(TicketParseSource.Mistral, throws = CancellationException("fuera"))
+        val regex = FakeParser(TicketParseSource.Regex, ticket = ParsedTicket(source = TicketParseSource.Regex))
+        val useCase = ScanTicketUseCase(FakeOcrEngine(), listOf(cancelled, regex), FakeTelemetry())
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { useCase("file://x.jpg", ScanSource.Camera) }
+        }
+        assertTrue(!regex.called)
+    }
+
+    @Test
+    fun `a cancelled ocr propagates and is not captured as an error`() {
+        val telemetry = FakeTelemetry()
+        val ocr = FakeOcrEngine(Result.failure(CancellationException("fuera")))
+        val useCase = ScanTicketUseCase(ocr, listOf(RegexTicketParser()), telemetry)
+
+        assertThrows(CancellationException::class.java) {
+            runBlocking { useCase("file://x.jpg", ScanSource.Camera) }
+        }
+        assertTrue(telemetry.captured.isEmpty())
     }
 
     @Test

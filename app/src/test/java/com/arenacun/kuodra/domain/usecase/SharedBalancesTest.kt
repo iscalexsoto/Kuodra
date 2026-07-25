@@ -5,10 +5,14 @@ import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.PayerShare
 import com.arenacun.kuodra.domain.model.PersonRef
 import com.arenacun.kuodra.domain.model.SplitShare
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SharedBalancesTest {
+
+    /** Fecha fija: no interviene en los saldos y el reloj real solo aportaría fragilidad. */
+    private val today: LocalDate = LocalDate.of(2026, 6, 20)
 
     private fun expense(
         id: String,
@@ -83,7 +87,7 @@ class SharedBalancesTest {
             splits = listOf(SplitShare(PersonRef.ME, Money(450)), SplitShare("a", Money(450))),
         )
         // "a" te paga 450 (Transfer a → Tú): ambos a cero.
-        val payment = RecordPayment.build("s1", "a", "Andrea", Money(450), currentNet = -450, today = java.time.LocalDate.now())
+        val payment = RecordPayment.build("s1", "a", "Andrea", Money(450), currentNet = -450, today = today)
         val balances = SharedBalances.compute(listOf(movement), listOf(payment))
         assertEquals(null, balances["a"])
         assertEquals(null, balances[PersonRef.ME])
@@ -96,7 +100,7 @@ class SharedBalancesTest {
             payers = listOf(PayerShare(PersonRef.ME, Money(900))),
             splits = listOf(SplitShare(PersonRef.ME, Money(450)), SplitShare("a", Money(450))),
         )
-        val consumed = RecordPayment.build("s1", "a", "Andrea", Money(450), currentNet = -450, today = java.time.LocalDate.now())
+        val consumed = RecordPayment.build("s1", "a", "Andrea", Money(450), currentNet = -450, today = today)
             .copy(settledBy = "corte1")
         val balances = SharedBalances.compute(listOf(movement), listOf(consumed))
         // El pago consumido se ignora: saldos originales.

@@ -1,7 +1,6 @@
 package com.arenacun.kuodra.data.telemetry
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import com.arenacun.kuodra.data.local.SessionStore
+import com.arenacun.kuodra.TestPrefsRule
 import com.arenacun.kuodra.data.local.db.TelemetryDao
 import com.arenacun.kuodra.data.local.db.TelemetryEventEntity
 import com.arenacun.kuodra.data.remote.TelemetryApi
@@ -13,21 +12,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 class TelemetryUploaderTest {
 
     @get:Rule
-    val tmp = TemporaryFolder()
+    val prefs = TestPrefsRule()
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
-    private fun sessionStore(): SessionStore {
-        val dataStore = PreferenceDataStoreFactory.create { tmp.newFile("t.preferences_pb") }
-        return SessionStore(dataStore)
-    }
+    private fun sessionStore() = prefs.sessionStore("t.preferences_pb")
 
-    private fun spool() = CrashSpool(tmp.newFolder("spool"), json)
+    private fun spool() = CrashSpool(prefs.newFolder("spool"), json)
 
     private fun record(id: String, createdAt: Long, userId: String = "") =
         TelemetryRecord(id = id, createdAt = createdAt, level = "Error", type = "error", message = id, userId = userId)

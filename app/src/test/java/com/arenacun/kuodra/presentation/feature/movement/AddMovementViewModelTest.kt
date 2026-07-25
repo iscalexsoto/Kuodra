@@ -46,6 +46,12 @@ class AddMovementViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
+    /**
+     * Un único `now()` para todo el test: si cada dato y cada aserción leyeran el reloj por su cuenta,
+     * cruzar la medianoche entre dos lecturas haría fallar la comparación.
+     */
+    private val today: LocalDate = LocalDate.now()
+
     private class FakeSpaceRepository : SpaceRepository {
         override val activeSpace: StateFlow<Space> = MutableStateFlow(Space.PERSONAL)
         override val spaces: Flow<List<Space>> = MutableStateFlow(emptyList())
@@ -109,7 +115,7 @@ class AddMovementViewModelTest {
     private fun scan(
         merchant: String? = "OXXO",
         total: Money? = Money(5950),
-        date: LocalDate? = LocalDate.now().minusDays(2),
+        date: LocalDate? = today.minusDays(2),
         items: List<ParsedTicketItem> = emptyList(),
     ) = TicketScan(
         rawText = "OXXO\nTOTAL 59.50",
@@ -120,7 +126,7 @@ class AddMovementViewModelTest {
     @Test
     fun `applyScan pre-fills concept, amount, date and items`() {
         val vm = viewModel()
-        val date = LocalDate.now().minusDays(2)
+        val date = today.minusDays(2)
         vm.applyScan(
             scan(
                 date = date,
@@ -156,7 +162,7 @@ class AddMovementViewModelTest {
     @Test
     fun `applyScan clamps a future date to today`() {
         val vm = viewModel()
-        vm.applyScan(scan(date = LocalDate.now().plusDays(5)))
+        vm.applyScan(scan(date = today.plusDays(5)))
 
         assertEquals(vm.uiState.value.today, vm.uiState.value.date)
     }
@@ -185,7 +191,7 @@ class AddMovementViewModelTest {
         categoryId = "cat-super",
         title = "Súper semanal",
         note = "Con vale de despensa",
-        date = LocalDate.now().minusDays(3),
+        date = today.minusDays(3),
         items = listOf(MovementItem("i1", "Leche", Money(3000))),
         scanRawText = "SUPERAMA\nTOTAL 125.50",
         scanSource = ScanSource.Gallery,
@@ -201,7 +207,7 @@ class AddMovementViewModelTest {
         assertTrue(st.isEditing)
         assertEquals("Súper semanal", st.concept)
         assertEquals(125.50, st.amount!!, 0.0001)
-        assertEquals(LocalDate.now().minusDays(3), st.date)
+        assertEquals(today.minusDays(3), st.date)
         // La categoría no está en el catálogo: se preserva el id original.
         assertEquals("cat-super", st.category.id)
         assertEquals(listOf("Leche"), st.items.map { it.concept })

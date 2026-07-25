@@ -1,7 +1,6 @@
 package com.arenacun.kuodra.data.repository
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import com.arenacun.kuodra.data.local.SessionStore
+import com.arenacun.kuodra.TestPrefsRule
 import com.arenacun.kuodra.data.local.db.MovementDao
 import com.arenacun.kuodra.data.local.db.MovementEntity
 import com.arenacun.kuodra.data.sync.SyncTrigger
@@ -15,7 +14,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 
 /**
  * [MovementRepositoryImpl] sobre Room: `add`/`update` hacen upsert `dirty` filtrado por espacio,
@@ -24,7 +22,7 @@ import org.junit.rules.TemporaryFolder
 class MovementRepositoryImplTest {
 
     @get:Rule
-    val tmp = TemporaryFolder()
+    val prefs = TestPrefsRule()
 
     private class FakeMovementDao(val rows: MutableList<MovementEntity> = mutableListOf()) : MovementDao {
         override fun observe(owner: String): Flow<List<MovementEntity>> = flowOf(rows.filter { !it.deleted })
@@ -45,8 +43,7 @@ class MovementRepositoryImplTest {
     }
 
     private suspend fun repositoryWithSession(dao: FakeMovementDao): MovementRepositoryImpl {
-        val dataStore = PreferenceDataStoreFactory.create { tmp.newFile("mov.preferences_pb") }
-        val session = SessionStore(dataStore)
+        val session = prefs.sessionStore("mov.preferences_pb")
         session.save("tok", "u1", "u1@x.com", "U")
         return MovementRepositoryImpl(dao, session, SyncTrigger.NoOp)
     }
