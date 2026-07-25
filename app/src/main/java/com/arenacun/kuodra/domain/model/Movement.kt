@@ -33,10 +33,6 @@ data class Movement(
     val scanRawText: String? = null,
     /** Origen del escaneo (cámara/galería); null = captura manual. */
     val scanSource: ScanSource? = null,
-    /** Estado de devolución (solo Personal). Por defecto no participa. */
-    val returnStatus: ReturnStatus = ReturnStatus.None,
-    /** % de devolución congelado al marcar [ReturnStatus.Returned]; null mientras None/Pending. */
-    val returnPercent: Int? = null,
 )
 
 /**
@@ -50,8 +46,6 @@ data class MovementItem(
     val amount: Money,
     /** Gastos (futuro): quién pagó esta partida; null = el pagador del movimiento. */
     val payer: String? = null,
-    /** Personal: si esta partida se incluye en la devolución cuando el movimiento está "Por devolver". */
-    val returnable: Boolean = true,
 )
 
 /** Monto no detallado: total − suma de partidas (puede ser negativo si exceden el total). */

@@ -1,17 +1,14 @@
 package com.arenacun.kuodra.domain.model
 
-import com.arenacun.kuodra.domain.usecase.ReturnCalc
-
 /** Frecuencia del presupuesto personal (`scrPersonalSettings` del prototipo). */
 enum class BudgetFrequency(val label: String) {
     Weekly("Semanal"), Biweekly("Quincenal"), Monthly("Mensual"), Custom("Personalizado")
 }
 
 /**
- * Configuración del presupuesto y las devoluciones (solo Personal). Cada frecuencia usa su propio
- * campo de día: [weekday] (Semanal), [firstDay]+[secondDay] (Quincenal), [monthlyDay] (Mensual) e
- * [customInterval] (Personalizado). Réplica de `scrPersonalSettings` del prototipo, extendida con
- * [returnPercent] (el % global vivo de los movimientos "Por devolver").
+ * Configuración del presupuesto (solo Personal). Cada frecuencia usa su propio campo de día:
+ * [weekday] (Semanal), [firstDay]+[secondDay] (Quincenal), [monthlyDay] (Mensual) e
+ * [customInterval] (Personalizado). Réplica de `scrPersonalSettings` del prototipo.
  */
 data class BudgetConfig(
     val enabled: Boolean,
@@ -28,8 +25,6 @@ data class BudgetConfig(
     val monthlyDay: Int = 1,
     /** Personalizado: cierra el periodo cada N días. */
     val customInterval: Int = 15,
-    /** % global a devolver de los movimientos "Por devolver" (5..100). Independiente de [enabled]. */
-    val returnPercent: Int = ReturnCalc.DEFAULT_RETURN_PERCENT,
 ) {
     companion object {
         /** Presupuesto por defecto (apagado) de un usuario nuevo. */
@@ -55,4 +50,6 @@ data class SpaceSettings(
     /** Presupuesto (solo Personal; null en el resto). */
     val budget: BudgetConfig?,
     val reminderEnabled: Boolean,
+    /** División por defecto de los gastos (solo Gastos; null en Personal). */
+    val splitRule: SplitRule? = null,
 )

@@ -38,10 +38,6 @@ data class MovementEntity(
     val scanRawText: String? = null,
     /** Nombre del enum `ScanSource` (`Camera`/`Gallery`); null = captura manual. */
     val scanSource: String? = null,
-    /** Nombre del enum `ReturnStatus` (`None`/`Pending`/`Returned`). */
-    val returnStatus: String = "None",
-    /** % de devolución congelado al marcar `Returned`; null mientras None/Pending. */
-    val returnPercent: Int? = null,
     val updatedAt: Long,
     val deleted: Boolean,
     val dirty: Boolean,

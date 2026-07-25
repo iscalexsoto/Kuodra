@@ -45,6 +45,8 @@ import com.arenacun.kuodra.domain.model.Countries
 import com.arenacun.kuodra.domain.model.DateLabels
 import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SpaceSettings
+import com.arenacun.kuodra.domain.model.SplitMode
+import com.arenacun.kuodra.domain.model.SplitRule
 import com.arenacun.kuodra.domain.model.initialsOf
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.domain.model.ThemeMode
@@ -54,6 +56,7 @@ import com.arenacun.kuodra.presentation.component.Chevron
 import com.arenacun.kuodra.presentation.component.KIcon
 import com.arenacun.kuodra.presentation.component.KuodraBottomSheet
 import com.arenacun.kuodra.presentation.component.KuodraCalculator
+import com.arenacun.kuodra.presentation.component.KuodraNumberPad
 import com.arenacun.kuodra.presentation.component.KuodraTextField
 import com.arenacun.kuodra.presentation.component.KuodraThemeSwitch
 import com.arenacun.kuodra.presentation.component.PlusIcon
@@ -112,10 +115,10 @@ fun SettingsScreen(
         when (state.useCase) {
             UseCase.Personal -> {
                 settings.budget?.let { BudgetSection(c, it, viewModel) }
-                settings.budget?.let { ReturnsSection(c, it.returnPercent, viewModel) }
             }
             UseCase.Gastos -> {
                 MembersSection(c, "MIEMBROS", state.contacts, viewModel)
+                settings.splitRule?.let { SplitRuleSection(c, it, state, viewModel) }
                 ReminderRow(c, "Recordatorio de liquidación", settings.reminderEnabled, viewModel::onToggleReminder)
             }
         }
@@ -223,6 +226,18 @@ fun SettingsScreen(
             NameSheet(c, draft, viewModel)
         }
     }
+    // Porcentaje de un participante de la regla: number pad, nunca teclado del sistema.
+    state.rulePadPersonId?.let { id ->
+        Dialog(onDismissRequest = viewModel::onDismissRulePad) {
+            KuodraNumberPad(
+                state = state.rulePad,
+                title = "PORCENTAJE DE ${state.ruleMemberName(id).uppercase()}",
+                confirmLabel = "Confirmar",
+                onKey = viewModel::onRulePadKey,
+                onConfirm = viewModel::onConfirmRulePad,
+            )
+        }
+    }
 }
 
 /** Hoja para editar el nombre del usuario (sección Cuenta). */
@@ -324,9 +339,18 @@ private fun BudgetSection(c: KuodraColors, budget: BudgetConfig, viewModel: Sett
     }
 }
 
-/** Devoluciones (Personal): editor del % global a devolver de los movimientos "Por devolver". */
+/**
+ * División por defecto (Gastos): el acuerdo fijo del espacio ("mi hermano paga el 75%"). Se aplica
+ * como prellenado a cada gasto nuevo, así que no hay que capturar la división una por una.
+ */
 @Composable
-private fun ReturnsSection(c: KuodraColors, returnPercent: Int, viewModel: SettingsViewModel) {
+private fun SplitRuleSection(
+    c: KuodraColors,
+    rule: SplitRule,
+    state: SettingsUiState,
+    viewModel: SettingsViewModel,
+) {
+    val members = state.ruleMembers
     Card(c, Modifier.padding(top = 12.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Row(
@@ -336,21 +360,112 @@ private fun ReturnsSection(c: KuodraColors, returnPercent: Int, viewModel: Setti
             ) {
                 SettingIcon(c, R.drawable.ic_credit_card)
                 Column(Modifier.weight(1f)) {
-                    Text("Devoluciones", style = Kuodra.type.heading, color = c.ink)
+                    Text("División por defecto", style = Kuodra.type.heading, color = c.ink)
                     Text(
-                        "Los movimientos por devolver usan este % en vivo; al marcarlos devueltos, el % se congela en cada movimiento.",
+                        "Cada gasto nuevo llega con esta división ya puesta. Puedes cambiarla dentro del gasto cuando sea la excepción.",
                         style = Kuodra.type.caption, color = c.ink3,
                         modifier = Modifier.padding(top = 3.dp),
                     )
                 }
+                KToggle(c, rule.enabled, viewModel::onToggleSplitRule)
             }
-            Box(Modifier.fillMaxWidth().padding(vertical = 16.dp).height(1.dp).background(c.line))
-            Text("PORCENTAJE A DEVOLVER", style = Kuodra.type.overline, color = c.ink3,
-                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 13.dp))
-            BigStepper(
-                c, returnPercent.toString(), "% del gasto",
-                { viewModel.onReturnPercentDelta(-5) }, { viewModel.onReturnPercentDelta(5) },
-            )
+
+            if (rule.enabled) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 16.dp).height(1.dp).background(c.line))
+                Text("MODO", style = Kuodra.type.overline, color = c.ink3,
+                    modifier = Modifier.padding(bottom = 11.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FreqButton(c, "Equitativo", rule.mode == SplitMode.Equal, Modifier.weight(1f)) {
+                        viewModel.onSetRuleMode(SplitMode.Equal)
+                    }
+                    FreqButton(c, "Porcentajes", rule.mode == SplitMode.Percent, Modifier.weight(1f)) {
+                        viewModel.onSetRuleMode(SplitMode.Percent)
+                    }
+                }
+
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("PARTICIPANTES", style = Kuodra.type.overline, color = c.ink3,
+                        modifier = Modifier.weight(1f))
+                    state.splitRuleError?.let { Text(it, style = Kuodra.type.caption, color = c.neg) }
+                }
+                members.forEach { p ->
+                    val participates = p.id in rule.participantIds
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 4.dp).clip(Kuodra.shape.lg)
+                            .background(if (participates) c.tint else c.surface2)
+                            .border(1.dp, if (participates) c.primary else c.line, Kuodra.shape.lg)
+                            .clickable { viewModel.onToggleRuleParticipant(p.id) }
+                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ToneAvatar(initialsOf(p.name), toneForName(p.name), size = 32.dp)
+                        Text(p.name, style = Kuodra.type.body, color = c.ink, modifier = Modifier.weight(1f))
+                        when {
+                            !participates -> Text("No participa", style = Kuodra.type.caption, color = c.ink3)
+                            rule.mode == SplitMode.Percent -> Box(
+                                Modifier.clip(Kuodra.shape.md).background(c.surface)
+                                    .border(1.dp, c.line, Kuodra.shape.md)
+                                    .clickable { viewModel.onOpenRulePad(p.id) }
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            ) { Text("${rule.percentOf(p.id)}%", style = Kuodra.type.heading, color = c.ink) }
+                            else -> Text("Parte igual", style = Kuodra.type.caption, color = c.tintInk)
+                        }
+                    }
+                }
+                if (state.splitRuleError != null && rule.mode == SplitMode.Percent) {
+                    Box(
+                        Modifier.fillMaxWidth().padding(top = 8.dp).clip(Kuodra.shape.md)
+                            .border(1.dp, c.line, Kuodra.shape.md)
+                            .clickable(onClick = viewModel::onDistributeRuleEvenly)
+                            .padding(vertical = 11.dp),
+                        contentAlignment = Alignment.Center,
+                    ) { Text("Repartir parejo", style = Kuodra.type.body, color = c.primary) }
+                }
+
+                Box(Modifier.fillMaxWidth().padding(vertical = 16.dp).height(1.dp).background(c.line))
+                Text("QUIÉN SUELE PAGAR", style = Kuodra.type.overline, color = c.ink3,
+                    modifier = Modifier.padding(bottom = 11.dp))
+                MemberChipGrid(c, members, rule.payerId, viewModel::onSetRulePayer)
+
+                Box(Modifier.fillMaxWidth().padding(vertical = 16.dp).height(1.dp).background(c.line))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Registrar mi parte en Personal", style = Kuodra.type.body, color = c.ink)
+                        Text(
+                            "Al guardar un gasto compartido, tu parte se registra en Personal sin preguntar.",
+                            style = Kuodra.type.caption, color = c.ink3,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                    }
+                    KToggle(c, rule.autoPersonalCopy, viewModel::onToggleRuleAutoPersonalCopy)
+                }
+            }
+        }
+    }
+}
+
+/** Chips de selección única sobre los miembros, 2 por fila (mismo patrón que [FreqGrid]). */
+@Composable
+private fun MemberChipGrid(
+    c: KuodraColors,
+    members: List<SpacePerson>,
+    selectedId: String,
+    onPick: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        members.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { p ->
+                    FreqButton(c, p.name, p.id == selectedId, Modifier.weight(1f)) { onPick(p.id) }
+                }
+                // Rellena la fila impar para que el último chip no ocupe el doble de ancho.
+                if (row.size == 1) Box(Modifier.weight(1f))
+            }
         }
     }
 }

@@ -50,7 +50,8 @@ cableadas en [`navigation/KuodraNavHost.kt`](../app/src/main/java/com/arenacun/k
   inline de 3 pasos `LeaveStep`; Confirmar llama `SpaceRepository.archive`). El FAB "Agregar" abre el
   sheet **`AddOptions`**: escanear ticket / tomar de la galería / capturar manual.
 - En `AllMovements`: **overlay de búsqueda** (pantalla completa) y **sheet de filtros**.
-- En `Settings`: calculadora de monto (presupuesto) y sheet de **agregar/editar contacto** (Nombre + Teléfono).
+- En `Settings`: calculadora de monto (presupuesto), sheet de **agregar/editar contacto** (Nombre +
+  Teléfono) y **number pad del % de un participante** de la división por defecto (Gastos).
 - En `HistoryDetail`: flujo **reenviar corte** (`reshare` → `shared`).
 
 El flujo cambia de **caso de uso** (`Personal` / `Gastos`) variando contenido y terminología, **no**
@@ -74,13 +75,14 @@ com.arenacun.kuodra
       SpacePerson.kt           # contacto de un espacio (id, name, phone) + PersonRef.ME ("Tú")
       SharedExpense.kt         # PayerShare, SplitMode (None/Equal/Amount/Percent), SplitShare
       Settlement.kt            # corte de Gastos (lines por persona + transfers) + Transfer
-      Movement.kt              # date + spaceId + payers/splitMode/splits + settlementId + items + returnStatus/... + helpers
-      ReturnStatus.kt          # enum devolución (None/Pending/Returned), solo Personal
+      Movement.kt              # date + spaceId + payers/splitMode/splits + settlementId + items + helpers
+      SplitRule.kt             # división por defecto de un espacio (modo, shares con %, pagador,
+                               #   autoPersonalCopy) + SplitRuleShare + Default (apagada)
       MovementCategory.kt      # catálogo del selector de categoría (defaults)
       Calc.kt                  # MOTOR PURO de la calculadora (CalcState, CalcKey, evaluate, formatAmount)
       CalendarMonth.kt         # LÓGICA PURA del calendario (rejilla, navegación acotada a hoy)
       DateLabels.kt            # formateo puro de fechas ("Hoy · 20 jun", "Martes · 18 jun")
-      SpaceSettings.kt         # BudgetConfig (día por frecuencia + returnPercent global)/BudgetFrequency + SpaceSettings
+      SpaceSettings.kt         # BudgetConfig (día por frecuencia)/BudgetFrequency + SpaceSettings (+ splitRule)
       SettlementRecord.kt      # registro de corte/liquidación (display) + SettlementLine
     scan/
       TicketScan.kt            # ScanSource, TicketParseSource, ParsedTicket(+Item), TicketScan
@@ -90,7 +92,8 @@ com.arenacun.kuodra
       RegexTicketParser.kt     # fallback local puro (total/fecha/comercio/items por heurísticas)
     usecase/
       MovementQuery.kt         # filter() + groupByDay() puros (búsqueda/filtros/agrupación)
-      ReturnCalc.kt            # PURO: base devolvible (por partidas), reembolso vivo/congelado, total por cobrar
+      SplitRuleCalc.kt         # PURO: sanea la regla del espacio (poda ids, reescala % a 100, coacciona
+                               #   el modo) + implicitDefault (heurística sin regla) + validate
       SplitCalc, SharedBalances, SettleSuggestions, CloseSettlement, WhatsAppMessage  # PUROS de Gastos
       ScanTicketUseCase.kt     # orquestador: OCR → normalize → cadena [Mistral, Regex]
     repository/
@@ -197,7 +200,10 @@ el logo, edita esos drawables, nunca las pantallas.
 ### Pantalla adaptativa por caso de uso
 `SettingsScreen` es **una sola pantalla** que ramifica con `when (useCase)` (igual que `DashboardScreen`),
 no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` observable + `update()` del
-`SpaceSettings` completo); la lógica de edición vive en el ViewModel.
+`SpaceSettings` completo); la lógica de edición vive en el ViewModel. Personal muestra la sección de
+presupuesto; Gastos muestra contactos, la **división por defecto** (`SplitRuleSection`: modo,
+participantes con su %, quién suele pagar y copia Personal automática) y el recordatorio. Cada tap
+persiste al instante sobre una copia de trabajo (`budgetEdit`/`ruleEdit`) para no perder taps rápidos.
 
 ### Navegación y DI
 - Destino `@Serializable` en `Destinations.kt`; la decisión de navegar va en **callbacks de pantalla**
@@ -284,13 +290,21 @@ no tres pantallas. El contrato `SettingsRepository` es mínimo (`settings()` obs
   pendientes ni las que ya están en la versión remota (evita que un pull borre datos que el servidor
   ignoró). Cada colección se sincroniza aislada. Esquema y reglas: [`POCKETBASE.md`](POCKETBASE.md).
 - **El seed en memoria se eliminó**: Gastos ya es real (Room + sync), igual que Personal.
-- **Lógica de negocio pura reutilizable** en `domain/usecase`: `BudgetPeriod`, `ClosePeriod` y
-  `ReturnCalc` (Personal); y de Gastos: `SplitCalc` (resuelve/valida la división a centavos),
+- **Lógica de negocio pura reutilizable** en `domain/usecase`: `BudgetPeriod` y `ClosePeriod`
+  (Personal); y de Gastos: `SplitCalc` (resuelve/valida la división a centavos), `SplitRuleCalc`
+  (sanea la **división por defecto** del espacio y aporta la heurística implícita cuando no hay regla),
   `SharedBalances` (neto por persona; resta los **pagos** vivos), `SettleSuggestions` (transferencias,
   greedy determinístico), `RecordPayment` (arma un pago individual como `Settlement` kind=Payment),
   `CloseSettlement` (congela el corte + ids de movimientos y pagos a consumir), `ShareSummary` y
   `WhatsAppMessage`. Un corte y un pago individual comparten la colección `settlements`
   (`SettlementKind` = `Corte`/`Payment`; `settledBy` marca los pagos consumidos por un corte).
+- **División por defecto por espacio** (`Space.splitRule`, columna JSON `splitRuleJson` en `spaces`):
+  existe para acuerdos fijos (p. ej. 75/25 con un hermano). Se configura en Ajustes del espacio y
+  `AddMovementViewModel` la aplica como **prellenado** de cada alta mientras `splitTouched` sea false;
+  cualquier cambio manual en `SplitConfigScreen` la congela para ese gasto (y ofrece restablecerla).
+  La regla puede guardarse incompleta (% que no suman 100) y `SplitRuleCalc.sanitize` la deja aplicable
+  al leerla, así que un gasto nunca queda bloqueado. Con `autoPersonalCopy` el gasto Personal derivado
+  se registra sin el diálogo de confirmación. **Sustituyó a las devoluciones de Personal**, eliminadas.
 - El "hoy" es la fecha real del sistema (`LocalDate.now()`), inyectable como parámetro en los ViewModels
   que lo usan para poder fijarlo en tests.
 

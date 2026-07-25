@@ -46,6 +46,7 @@ class SettleViewModelTest {
         override suspend fun setReminder(id: String, enabled: Boolean) = Unit
         override suspend fun archive(id: String) = Unit
         override suspend fun unarchive(id: String) = Unit
+        override suspend fun setSplitRule(id: String, rule: com.arenacun.kuodra.domain.model.SplitRule) = Unit
         override suspend fun isConfigured(): Boolean = true
     }
 

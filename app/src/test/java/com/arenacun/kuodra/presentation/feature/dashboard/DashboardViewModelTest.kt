@@ -49,6 +49,7 @@ class DashboardViewModelTest {
         override suspend fun setReminder(id: String, enabled: Boolean) = Unit
         override suspend fun archive(id: String) = Unit
         override suspend fun unarchive(id: String) = Unit
+        override suspend fun setSplitRule(id: String, rule: com.arenacun.kuodra.domain.model.SplitRule) = Unit
         override suspend fun isConfigured(): Boolean = true
     }
 
@@ -121,44 +122,6 @@ class DashboardViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf("b"), viewModel.uiState.value.movements.map { it.id })
-        collectJob.cancel()
-    }
-
-    @Test
-    fun `pending returns total sums all pending and mark-all stamps the current percent`() = runTest {
-        val budget = com.arenacun.kuodra.domain.model.BudgetConfig.Default.copy(returnPercent = 50)
-        val settings = SpaceSettings(name = "", members = emptyList(), budget = budget, reminderEnabled = false)
-        val movements = FakeMovementRepository(
-            listOf(
-                Movement("a", Money.ofMajor(100.0), "otro", "a", returnStatus = com.arenacun.kuodra.domain.model.ReturnStatus.Pending),
-                Movement("b", Money.ofMajor(40.0), "otro", "b", returnStatus = com.arenacun.kuodra.domain.model.ReturnStatus.Pending),
-                Movement("c", Money.ofMajor(999.0), "otro", "c"),
-            ),
-        )
-        val viewModel = DashboardViewModel(
-            spaceRepository = FakeSpaceRepository(UseCase.Personal),
-            movementRepository = movements,
-            summaryRepository = FakeSummaryRepository(),
-            settingsRepository = FakeSettingsRepository(settings),
-            snapshotRepository = FakeSnapshotRepository(),
-            personRepository = FakePersonRepository(),
-            settlementRepository = FakeSettlementRepository(),
-        )
-
-        val collectJob = launch { viewModel.uiState.collect {} }
-        advanceUntilIdle()
-        // (100 + 40) * 50% = 70
-        assertEquals("$70", viewModel.uiState.value.pendingReturns?.totalLabel)
-
-        viewModel.onMarkAllReturned()
-        assertEquals(DashboardSheet.ReturnAllConfirm, viewModel.overlay.value.sheet)
-        viewModel.onMarkAllReturnedConfirm()
-        advanceUntilIdle()
-
-        assertEquals(DashboardSheet.ReturnAllDone, viewModel.overlay.value.sheet)
-        assertEquals(null, viewModel.uiState.value.pendingReturns)
-        val a = viewModel.uiState.value.movements.first { it.id == "a" }
-        assertEquals(com.arenacun.kuodra.domain.model.ReturnStatus.Returned, a.returnStatus)
         collectJob.cancel()
     }
 

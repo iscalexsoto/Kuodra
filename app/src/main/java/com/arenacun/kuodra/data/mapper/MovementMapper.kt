@@ -9,7 +9,6 @@ import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.MovementItem
 import com.arenacun.kuodra.domain.model.PayerShare
-import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.SplitMode
 import com.arenacun.kuodra.domain.model.SplitShare
 import com.arenacun.kuodra.domain.scan.ScanSource
@@ -21,13 +20,13 @@ private val json = Json { ignoreUnknownKeys = true }
 
 /** Partidas (dominio) → JSON de almacenamiento, vía DTO `@Serializable`. */
 private fun List<MovementItem>.toJson(): String =
-    json.encodeToString(map { MovementItemDto(it.id, it.concept, it.amount.cents, it.payer, it.returnable) })
+    json.encodeToString(map { MovementItemDto(it.id, it.concept, it.amount.cents, it.payer) })
 
 /** JSON de almacenamiento → partidas (dominio). */
 private fun String.toItems(): List<MovementItem> =
     if (isBlank()) emptyList()
     else json.decodeFromString<List<MovementItemDto>>(this)
-        .map { MovementItem(it.id, it.concept, Money(it.amount), it.payer, it.returnable) }
+        .map { MovementItem(it.id, it.concept, Money(it.amount), it.payer) }
 
 /** Pagadores/divisiones (dominio) ⇄ JSON de almacenamiento. */
 private fun List<PayerShare>.payersToJson(): String =
@@ -48,10 +47,6 @@ private fun String.toSplits(): List<SplitShare> =
 private fun splitModeOf(name: String): SplitMode =
     SplitMode.entries.firstOrNull { it.name == name } ?: SplitMode.None
 
-/** Nombre del enum ⇄ `ReturnStatus`, tolerante (vacío/desconocido ⇒ None), como `ScanSource`. */
-private fun returnStatusOf(name: String): ReturnStatus =
-    ReturnStatus.entries.firstOrNull { it.name == name } ?: ReturnStatus.None
-
 /** Entity → dominio (la UI/dominio no conoce `owner` ni metadatos de sync). */
 fun MovementEntity.toDomain(): Movement = Movement(
     id = id,
@@ -68,8 +63,6 @@ fun MovementEntity.toDomain(): Movement = Movement(
     items = itemsJson.toItems(),
     scanRawText = scanRawText,
     scanSource = scanSource?.let { name -> ScanSource.entries.firstOrNull { it.name == name } },
-    returnStatus = returnStatusOf(returnStatus),
-    returnPercent = returnPercent,
 )
 
 /** Dominio → Entity, sellando `owner` y los metadatos de sincronización. */
@@ -94,8 +87,6 @@ fun Movement.toEntity(
     itemsJson = items.toJson(),
     scanRawText = scanRawText,
     scanSource = scanSource?.name,
-    returnStatus = returnStatus.name,
-    returnPercent = returnPercent,
     updatedAt = updatedAt,
     deleted = deleted,
     dirty = dirty,
@@ -118,8 +109,6 @@ fun MovementEntity.toDto(): MovementDto = MovementDto(
     items = json.decodeFromString(itemsJson.ifBlank { "[]" }),
     scanRawText = scanRawText.orEmpty(),
     scanSource = scanSource.orEmpty(),
-    returnStatus = returnStatus,
-    returnPercent = returnPercent ?: 0,
     deleted = deleted,
     updated = remoteUpdated,
 )
@@ -141,8 +130,6 @@ fun MovementDto.toEntity(owner: String): MovementEntity = MovementEntity(
     itemsJson = json.encodeToString(items),
     scanRawText = scanRawText.ifEmpty { null },
     scanSource = scanSource.ifEmpty { null },
-    returnStatus = returnStatus.ifEmpty { "None" },
-    returnPercent = returnPercent.takeIf { it > 0 },
     updatedAt = System.currentTimeMillis(),
     deleted = deleted,
     dirty = false,

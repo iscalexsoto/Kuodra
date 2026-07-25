@@ -34,7 +34,6 @@ import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.DateLabels
-import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.presentation.component.BackCircle
@@ -79,7 +78,8 @@ fun AddMovementScreen(
     LaunchedEffect(Unit) {
         viewModel.saved.collect { result ->
             when (result) {
-                is SaveResult.Done -> onSaved()
+                // La copia Personal automática (regla del espacio) no abre diálogo: ya se registró.
+                is SaveResult.Done, is SaveResult.PersonalCopySaved -> onSaved()
                 is SaveResult.OfferPersonalCopy -> personalOffer = result.shareLabel
             }
         }
@@ -216,11 +216,6 @@ fun AddMovementScreen(
             )
         }
 
-        // devolución (personal)
-        if (uc == UseCase.Personal) {
-            ReturnToggleRow(c, state.returnStatus, viewModel::onToggleReturnPending)
-        }
-
         // pagadores + división (gastos): pantalla dedicada
         if (uc == UseCase.Gastos) {
             FieldRow(
@@ -340,53 +335,6 @@ private fun FieldRow(
             Text(value, style = Kuodra.type.body, color = c.ink, maxLines = 1, modifier = Modifier.padding(top = 1.dp))
         }
         Chevron(7.dp, c.ink3, degrees = 90f)
-    }
-}
-
-/**
- * Fila "Devolución" (solo Personal): alterna None↔Pending con un switch. Un movimiento ya Devuelto
- * se muestra en solo lectura (se reabre desde el detalle del movimiento).
- */
-@Composable
-private fun ReturnToggleRow(c: KuodraColors, status: ReturnStatus, onToggle: () -> Unit) {
-    val returned = status == ReturnStatus.Returned
-    val on = status == ReturnStatus.Pending
-    Row(
-        Modifier.fillMaxWidth().padding(top = 12.dp).clip(Kuodra.shape.lg)
-            .background(c.surface).border(1.dp, c.line, Kuodra.shape.lg)
-            .then(if (returned) Modifier else Modifier.clickable(onClick = onToggle))
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier.size(34.dp).clip(Kuodra.shape.md).background(c.posTint),
-            contentAlignment = Alignment.Center,
-        ) { Box(Modifier.size(width = 14.dp, height = 11.dp).clip(Kuodra.shape.sm).border(2.dp, c.pos, Kuodra.shape.sm)) }
-        Column(Modifier.weight(1f)) {
-            Text("Devolución", style = Kuodra.type.caption, color = c.ink3)
-            Text(
-                when (status) {
-                    ReturnStatus.None -> "No aplica"
-                    ReturnStatus.Pending -> "Por devolver"
-                    ReturnStatus.Returned -> "Devuelto"
-                },
-                style = Kuodra.type.body, color = c.ink, modifier = Modifier.padding(top = 1.dp),
-            )
-        }
-        if (returned) {
-            Text("En detalle", style = Kuodra.type.caption, color = c.ink3)
-        } else {
-            Box(
-                Modifier.width(46.dp).height(28.dp).clip(Kuodra.shape.pill)
-                    .background(if (on) c.primary else c.surface2)
-                    .border(1.dp, if (on) c.primary else c.line, Kuodra.shape.pill),
-                contentAlignment = if (on) Alignment.CenterEnd else Alignment.CenterStart,
-            ) {
-                Box(Modifier.padding(horizontal = 3.dp).size(22.dp).clip(Kuodra.shape.pill)
-                    .background(if (on) c.primaryInk else c.surface))
-            }
-        }
     }
 }
 

@@ -1,5 +1,8 @@
 package com.arenacun.kuodra.data.mapper
 
+import com.arenacun.kuodra.data.local.db.SpaceEntity
+import com.arenacun.kuodra.data.remote.dto.SpaceDto
+import com.arenacun.kuodra.data.remote.dto.SplitRuleDto
 import com.arenacun.kuodra.domain.model.AvatarTone
 import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.Money
@@ -7,11 +10,12 @@ import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.MovementItem
 import com.arenacun.kuodra.domain.model.PayerShare
 import com.arenacun.kuodra.domain.model.PersonRef
-import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.Settlement
 import com.arenacun.kuodra.domain.model.SettlementBalanceLine
 import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SplitMode
+import com.arenacun.kuodra.domain.model.SplitRule
+import com.arenacun.kuodra.domain.model.SplitRuleShare
 import com.arenacun.kuodra.domain.model.SplitShare
 import com.arenacun.kuodra.domain.model.Transfer
 import com.arenacun.kuodra.domain.scan.ScanSource
@@ -87,81 +91,6 @@ class MapperTest {
     }
 
     @Test
-    fun `return fields round-trip through entity and dto`() {
-        val movement = Movement(
-            id = "abc123def456ghi",
-            amount = Money.ofMajor(90.0),
-            categoryId = "super",
-            title = "Súper",
-            items = listOf(
-                MovementItem("i1", "A", Money(60_00), returnable = true),
-                MovementItem("i2", "B", Money(30_00), returnable = false),
-            ),
-            returnStatus = ReturnStatus.Returned,
-            returnPercent = 70,
-        )
-
-        val entity = movement.toEntity(owner = "u1", updatedAt = 1_000L, dirty = false)
-        assertEquals("Returned", entity.returnStatus)
-        assertEquals(70, entity.returnPercent)
-        assertEquals(movement, entity.toDomain())
-
-        val dto = entity.toDto()
-        assertEquals("Returned", dto.returnStatus)
-        assertEquals(70, dto.returnPercent)
-        assertFalse(dto.items[1].returnable)
-        assertEquals(movement, dto.toEntity(owner = "u1").toDomain())
-    }
-
-    @Test
-    fun `none movement carries zero percent through the dto`() {
-        val movement = Movement(
-            id = "abc123def456ghi",
-            amount = Money.ofMajor(10.0),
-            categoryId = "super",
-            title = "Súper",
-        )
-
-        val dto = movement.toEntity(owner = "u1", updatedAt = 1_000L, dirty = false).toDto()
-        assertEquals("None", dto.returnStatus)
-        assertEquals(0, dto.returnPercent)
-        assertEquals(movement, dto.toEntity(owner = "u1").toDomain())
-    }
-
-    @Test
-    fun `server empty return status and zero percent decode to none and null`() {
-        // PocketBase devuelve text vacío / number 0 en campos no poblados (registros legacy).
-        val dto = com.arenacun.kuodra.data.remote.dto.MovementDto(
-            id = "abc123def456ghi",
-            amount = 1000,
-            category = "super",
-            title = "Súper",
-            returnStatus = "",
-            returnPercent = 0,
-        )
-
-        val back = dto.toEntity(owner = "u1")
-        assertEquals("None", back.returnStatus)
-        assertEquals(null, back.returnPercent)
-        assertEquals(ReturnStatus.None, back.toDomain().returnStatus)
-    }
-
-    @Test
-    fun `legacy item json without returnable decodes to true`() {
-        val entity = Movement(
-            id = "abc123def456ghi",
-            amount = Money.ofMajor(50.0),
-            categoryId = "super",
-            title = "Súper",
-        ).toEntity(owner = "u1", updatedAt = 1_000L, dirty = false)
-            .copy(itemsJson = """[{"id":"i1","concept":"A","amount":5000}]""")
-
-        val items = entity.toDomain().items
-        assertEquals(1, items.size)
-        assertTrue(items[0].returnable)
-    }
-
-    @Test
     fun `category round-trips through entity preserving tone`() {
         val category = Category("ocio", "Ocio", "Oc", AvatarTone.Neg)
 
@@ -195,6 +124,51 @@ class MapperTest {
         assertEquals("s1", dto.space)
         assertEquals(2, dto.splits.size)
         assertEquals(movement, dto.toEntity(owner = "u1").toDomain())
+    }
+
+    @Test
+    fun `space split rule round-trips through entity and dto`() {
+        val rule = SplitRule(
+            enabled = true,
+            mode = SplitMode.Percent,
+            shares = listOf(SplitRuleShare(PersonRef.ME, 25), SplitRuleShare("p1", 75)),
+            payerId = "p1",
+            autoPersonalCopy = true,
+        )
+        val entity = SpaceEntity(
+            id = "s1", owner = "u1", name = "Hermano", splitRuleJson = rule.toRuleJson(),
+            updatedAt = 1_000L, deleted = false, dirty = true,
+        )
+
+        assertEquals(rule, entity.toDomain().splitRule)
+
+        val dto = entity.toDto()
+        assertEquals("Percent", dto.splitRule.mode)
+        assertEquals("p1", dto.splitRule.payer)
+        assertEquals(rule, dto.toEntity(owner = "u1").toDomain().splitRule)
+    }
+
+    @Test
+    fun `blank split rule column decodes to the default rule`() {
+        val entity = SpaceEntity(
+            id = "s1", owner = "u1", name = "Casa",
+            updatedAt = 1_000L, deleted = false, dirty = false,
+        )
+
+        assertEquals(SplitRule.Default, entity.toDomain().splitRule)
+        // El push manda `{}`, que el servidor y el pull vuelven a decodificar al default.
+        assertEquals(SplitRule.Default, entity.toDto().toEntity(owner = "u1").toDomain().splitRule)
+    }
+
+    @Test
+    fun `unknown split rule mode from the server decodes to equal`() {
+        // `Amount`/`None` no son modos válidos de una regla (ni un valor futuro desconocido).
+        val dto = SpaceDto(
+            id = "s1", owner = "u1", name = "Casa",
+            splitRule = SplitRuleDto(enabled = true, mode = "Amount"),
+        )
+
+        assertEquals(SplitMode.Equal, dto.toEntity(owner = "u1").toDomain().splitRule.mode)
     }
 
     @Test

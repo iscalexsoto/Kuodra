@@ -9,15 +9,20 @@ import com.arenacun.kuodra.domain.model.Calc
 import com.arenacun.kuodra.domain.model.CalcKey
 import com.arenacun.kuodra.domain.model.CalcState
 import com.arenacun.kuodra.domain.model.Person
+import com.arenacun.kuodra.domain.model.PersonRef
 import com.arenacun.kuodra.domain.model.Session
 import com.arenacun.kuodra.domain.model.Space
 import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SpaceSettings
+import com.arenacun.kuodra.domain.model.SplitMode
+import com.arenacun.kuodra.domain.model.SplitRule
+import com.arenacun.kuodra.domain.model.SplitRuleShare
 import com.arenacun.kuodra.domain.model.ThemeMode
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.initialsOf
 import com.arenacun.kuodra.domain.model.newId
 import com.arenacun.kuodra.domain.model.toneForName
+import com.arenacun.kuodra.domain.usecase.SplitRuleCalc
 import com.arenacun.kuodra.domain.repository.AuthRepository
 import com.arenacun.kuodra.domain.repository.PersonRepository
 import com.arenacun.kuodra.domain.repository.PreferencesRepository
@@ -74,6 +79,13 @@ class SettingsViewModel(
         val editingName: String? = null,
         /** Copia de trabajo del presupuesto (Personal): edición síncrona sin esperar a Room. */
         val budgetEdit: BudgetConfig? = null,
+        /**
+         * Copia de trabajo de la regla de división (Gastos), por la misma razón que [budgetEdit]. No
+         * se limpia cuando el valor persistido la alcanza; vive lo que dura la pantalla.
+         */
+        val ruleEdit: SplitRule? = null,
+        val rulePadPersonId: String? = null,
+        val rulePad: CalcState = CalcState(),
     )
 
     private val local = MutableStateFlow(Local())
@@ -95,6 +107,7 @@ class SettingsViewModel(
     ) { personal, space, persons, theme, session -> Base(personal, space, persons, theme, session) }
 
     val uiState = combine(base, local) { b, l ->
+        val rule = l.ruleEdit ?: b.space.splitRule
         val settings = if (useCase == UseCase.Personal) {
             if (l.budgetEdit != null) b.personal.copy(budget = l.budgetEdit) else b.personal
         } else {
@@ -103,6 +116,7 @@ class SettingsViewModel(
                 members = b.persons.map { it.toDisplay() },
                 budget = null,
                 reminderEnabled = b.space.reminderEnabled,
+                splitRule = rule,
             )
         }
         SettingsUiState(
@@ -115,8 +129,24 @@ class SettingsViewModel(
             editingContact = l.editingContact,
             accountName = b.session?.name.orEmpty(),
             editingName = l.editingName,
+            rulePadPersonId = l.rulePadPersonId,
+            rulePad = l.rulePad,
+            splitRuleError = if (useCase == UseCase.Gastos && rule.enabled)
+                SplitRuleCalc.validate(rule, memberIdsOf(b.persons)) else null,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState(useCase))
+
+    private fun memberIdsOf(persons: List<SpacePerson>): List<String> =
+        listOf(PersonRef.ME) + persons.map { it.id }
+
+    /** Contactos vigentes: sembrar la regla no puede depender de que la pantalla esté suscrita. */
+    private var currentPersons: List<SpacePerson> = emptyList()
+
+    init {
+        if (useCase == UseCase.Gastos) viewModelScope.launch {
+            personRepository.persons(spaceId).collect { currentPersons = it }
+        }
+    }
 
     private fun SpacePerson.toDisplay(): Person =
         Person(name, phone.ifBlank { "Sin WhatsApp" }, "", null, initialsOf(name), toneForName(name))
@@ -138,6 +168,77 @@ class SettingsViewModel(
         }
     }
 
+    // ---- División por defecto (Gastos) ----
+    /**
+     * Al encender la regla por primera vez se siembra con todos los miembros a partes iguales, para
+     * que nunca quede en un estado vacío que no se pueda aplicar; apagarla conserva la configuración.
+     */
+    fun onToggleSplitRule() = editRule { rule ->
+        val enabling = !rule.enabled
+        val shares = if (enabling && rule.shares.isEmpty())
+            SplitRuleCalc.evenPercents(memberIdsOf(currentPersons)) else rule.shares
+        rule.copy(enabled = enabling, shares = shares)
+    }
+
+    fun onSetRuleMode(mode: SplitMode) = editRule { rule ->
+        val shares = if (mode == SplitMode.Percent && rule.shares.sumOf { it.percent } <= 0)
+            SplitRuleCalc.evenPercents(rule.participantIds) else rule.shares
+        rule.copy(mode = mode, shares = shares)
+    }
+
+    /**
+     * Añade/quita un participante. En modo Percent los porcentajes anteriores dejan de sumar 100, así
+     * que se reparten parejo como punto de partida válido (el usuario los ajusta con el number pad).
+     */
+    fun onToggleRuleParticipant(id: String) = editRule { rule ->
+        val present = rule.shares.any { it.personId == id }
+        val ids = rule.participantIds.toSet().let { if (present) it - id else it + id }
+        // Orden canónico (el mismo que ve el usuario y que usa el alta).
+        val ordered = memberIdsOf(currentPersons).filter { it in ids }
+        rule.copy(
+            shares = if (rule.mode == SplitMode.Percent) SplitRuleCalc.evenPercents(ordered)
+            else ordered.map { SplitRuleShare(it, rule.percentOf(it)) },
+        )
+    }
+
+    fun onDistributeRuleEvenly() = editRule { it.copy(shares = SplitRuleCalc.evenPercents(it.participantIds)) }
+
+    fun onSetRulePayer(id: String) = editRule { it.copy(payerId = id) }
+
+    fun onToggleRuleAutoPersonalCopy() = editRule { it.copy(autoPersonalCopy = !it.autoPersonalCopy) }
+
+    /**
+     * Edita la regla sobre una copia de trabajo síncrona (igual que [editBudget]) y persiste. La regla
+     * puede quedar guardada incompleta (% que no suman 100) mientras el usuario teclea; `SplitRuleCalc`
+     * la sanea al aplicarla, y la pantalla muestra el aviso en vivo.
+     */
+    private fun editRule(transform: (SplitRule) -> SplitRule) {
+        if (useCase != UseCase.Gastos) return
+        val base = local.value.ruleEdit ?: spaceRepository.activeSpace.value.splitRule
+        val updated = transform(base)
+        local.update { it.copy(ruleEdit = updated) }
+        viewModelScope.launch { spaceRepository.setSplitRule(spaceId, updated) }
+    }
+
+    // ---- Number pad del % de un participante de la regla ----
+    fun onOpenRulePad(personId: String) = local.update {
+        val rule = it.ruleEdit ?: spaceRepository.activeSpace.value.splitRule
+        it.copy(rulePadPersonId = personId, rulePad = Calc.initial(rule.percentOf(personId).toDouble()))
+    }
+    fun onRulePadKey(key: CalcKey) = local.update { it.copy(rulePad = Calc.press(it.rulePad, key)) }
+    fun onDismissRulePad() = local.update { it.copy(rulePadPersonId = null) }
+    fun onConfirmRulePad() {
+        val l = local.value
+        val id = l.rulePadPersonId
+        val percent = l.rulePad.result?.toInt()?.coerceIn(0, 100)
+        if (id != null && percent != null) {
+            editRule { rule ->
+                rule.copy(shares = rule.shares.map { if (it.personId == id) it.copy(percent = percent) else it })
+            }
+        }
+        local.update { it.copy(rulePadPersonId = null) }
+    }
+
     fun onSetThemeMode(mode: ThemeMode) = preferences.setThemeMode(mode)
 
     // ---- Presupuesto (Personal) ----
@@ -150,10 +251,6 @@ class SettingsViewModel(
     fun onCustomIntervalDelta(delta: Int) = editBudget {
         it.copy(customInterval = (it.customInterval + delta).coerceIn(2, 90))
     }
-    fun onReturnPercentDelta(delta: Int) = editBudget {
-        it.copy(returnPercent = (it.returnPercent + delta).coerceIn(5, 100))
-    }
-
     /**
      * Edita el presupuesto sobre una copia de trabajo síncrona (evita perder taps rápidos por la
      * latencia de Room) y persiste el cambio.

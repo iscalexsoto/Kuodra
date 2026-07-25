@@ -1,6 +1,7 @@
 package com.arenacun.kuodra.domain.repository
 
 import com.arenacun.kuodra.domain.model.Space
+import com.arenacun.kuodra.domain.model.SplitRule
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -27,6 +28,9 @@ interface SpaceRepository {
     suspend fun setReminder(id: String, enabled: Boolean)
     suspend fun archive(id: String)
     suspend fun unarchive(id: String)
+
+    /** Guarda la división por defecto del espacio (puede quedar incompleta; se sanea al aplicarla). */
+    suspend fun setSplitRule(id: String, rule: SplitRule)
 
     /** `true` si el usuario ya completó el onboarding (eligió un modo al menos una vez). */
     suspend fun isConfigured(): Boolean

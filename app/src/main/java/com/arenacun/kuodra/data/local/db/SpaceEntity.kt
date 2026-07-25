@@ -19,6 +19,8 @@ data class SpaceEntity(
     val name: String,
     val archived: Boolean = false,
     val reminderEnabled: Boolean = true,
+    /** Regla de división por defecto serializada como JSON (vacío = `SplitRule.Default`). */
+    val splitRuleJson: String = "",
     val updatedAt: Long,
     val deleted: Boolean,
     val dirty: Boolean,

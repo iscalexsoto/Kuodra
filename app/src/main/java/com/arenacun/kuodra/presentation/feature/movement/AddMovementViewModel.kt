@@ -11,10 +11,10 @@ import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.MovementItem
 import com.arenacun.kuodra.domain.model.PayerShare
 import com.arenacun.kuodra.domain.model.PersonRef
-import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.Space
 import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SplitMode
+import com.arenacun.kuodra.domain.model.SplitRule
 import com.arenacun.kuodra.domain.model.SplitShare
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.newId
@@ -24,11 +24,13 @@ import com.arenacun.kuodra.domain.repository.MovementRepository
 import com.arenacun.kuodra.domain.repository.PersonRepository
 import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.usecase.SplitCalc
+import com.arenacun.kuodra.domain.usecase.SplitRuleCalc
 import com.arenacun.kuodra.presentation.component.CategoryDraft
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -44,7 +46,7 @@ import java.time.LocalDate
  */
 class AddMovementViewModel(
     private val editId: String?,
-    spaceRepository: SpaceRepository,
+    private val spaceRepository: SpaceRepository,
     personRepository: PersonRepository,
     private val categoryRepository: CategoryRepository,
     private val movementRepository: MovementRepository,
@@ -66,23 +68,36 @@ class AddMovementViewModel(
     val uiState: StateFlow<AddMovementUiState> = _uiState.asStateFlow()
 
     init {
-        // Miembros del espacio (Gastos): "Tú" ([PersonRef.ME]) + contactos. Reactivo al catálogo.
+        // Miembros del espacio (Gastos): "Tú" ([PersonRef.ME]) + contactos, y la regla de división por
+        // defecto (que puede cambiar en Ajustes durante la sesión). El prellenado se recalcula en cada
+        // emisión mientras nadie haya tocado la división: así es idempotente y converge sea cual sea el
+        // orden en que lleguen las personas y la pre-carga de edición.
         if (useCase == UseCase.Gastos) viewModelScope.launch {
-            personRepository.persons(spaceId).collect { people ->
+            combine(spaceRepository.activeSpace, personRepository.persons(spaceId)) { sp, people ->
+                sp to people
+            }.collect { (space, people) ->
                 val members = listOf(SpacePerson(PersonRef.ME, "Tú")) + people
+                val ids = members.map { it.id }
+                val rule = if (space.splitRule.enabled) SplitRuleCalc.sanitize(space.splitRule, ids)
+                else SplitRuleCalc.implicitDefault(ids)
                 _uiState.update { st ->
-                    val ids = members.map { it.id }.toSet()
-                    // Sin selección aún (alta nueva): con pocos miembros (≤2) participan todos por
-                    // comodidad; con más, solo "Tú" y el usuario elige a quién añadir (así el
-                    // "equitativo" es realmente entre los que participaron). Si ya hay selección
-                    // (p. ej. edición precargada), se conservan los válidos.
-                    val default = if (members.size > 2) setOf(PersonRef.ME) else ids
-                    val split = if (st.splitIds.isEmpty()) default else st.splitIds.filter { it in ids }.toSet()
-                    st.copy(members = members, splitIds = split)
+                    val base = st.copy(members = members, rule = rule)
+                    if (st.splitTouched) base else applyRule(base, rule)
                 }
             }
         }
     }
+
+    /** Prellena la división desde la regla. Idempotente; no marca [AddMovementUiState.splitTouched]. */
+    private fun applyRule(st: AddMovementUiState, rule: SplitRule): AddMovementUiState = st.copy(
+        splitMode = rule.mode,
+        splitIds = rule.participantIds.toSet(),
+        percentDraft = rule.shares.associate { it.personId to it.percent },
+        payers = listOf(PayerShare(rule.payerId, st.total)),
+    )
+
+    /** Descarta los ajustes de este gasto y vuelve al prellenado de la regla del espacio. */
+    fun onResetSplitToRule() = _uiState.update { applyRule(it, it.rule).copy(splitTouched = false) }
 
     private val _saved = Channel<SaveResult>(Channel.BUFFERED)
     val saved = _saved.receiveAsFlow()
@@ -127,8 +142,9 @@ class AddMovementViewModel(
                         note = m.note,
                         scanRawText = m.scanRawText,
                         scanSource = m.scanSource,
-                        returnStatus = m.returnStatus,
-                        returnPercent = m.returnPercent,
+                        // La división guardada gana: congela el prellenado para que la regla del
+                        // espacio no la pise cuando lleguen las personas.
+                        splitTouched = m.splits.isNotEmpty(),
                         isEditing = true,
                     )
                 }
@@ -168,14 +184,16 @@ class AddMovementViewModel(
     fun onDismissCalculator() = _uiState.update { it.copy(showCalculator = false) }
     fun onConfirmAmount() = _uiState.update { st ->
         val amount = st.calc.result ?: st.amount
-        // Si "Tú" es el único pagador (caso por defecto), su aporte sigue al total.
-        val payers = if (st.payers.size == 1 && st.payers.first().personId == PersonRef.ME)
-            listOf(PayerShare(PersonRef.ME, amount?.let { Money.ofMajor(it) } ?: Money.Zero))
+        // Con un solo pagador (el caso por defecto, sea "Tú" o quien diga la regla) su aporte sigue al
+        // total: así al añadir un segundo pagador se arranca desde "total / 0", no desde "0 / 0".
+        val payers = if (st.payers.size == 1)
+            listOf(st.payers.first().copy(amount = amount?.let { Money.ofMajor(it) } ?: Money.Zero))
         else st.payers
         st.copy(amount = amount, payers = payers, showCalculator = false)
     }
 
     // ---- Pantalla de división (pagadores + reparto) ----
+    // Todo cambio manual marca `splitTouched`: la regla del espacio deja de re-aplicarse sobre él.
     fun onTogglePayer(id: String) = _uiState.update { st ->
         val isPayer = st.payers.any { it.personId == id }
         val payers = if (isPayer)
@@ -184,21 +202,24 @@ class AddMovementViewModel(
         // Al añadir un pagador, se auto-incluye como participante de la división (removible
         // aparte). Al quitarlo como pagador, su participación en el reparto se deja intacta.
         val splitIds = if (isPayer) st.splitIds else st.splitIds + id
-        st.copy(payers = payers, splitIds = splitIds)
+        st.copy(payers = payers, splitIds = splitIds, splitTouched = true)
     }
     fun onSetPayerAmount(id: String, cents: Long) = _uiState.update { st ->
-        st.copy(payers = st.payers.map { if (it.personId == id) it.copy(amount = Money(cents)) else it })
+        st.copy(
+            payers = st.payers.map { if (it.personId == id) it.copy(amount = Money(cents)) else it },
+            splitTouched = true,
+        )
     }
-    fun onSetSplitMode(mode: SplitMode) = _uiState.update { it.copy(splitMode = mode) }
+    fun onSetSplitMode(mode: SplitMode) = _uiState.update { it.copy(splitMode = mode, splitTouched = true) }
     fun onToggleSplitMember(id: String) = _uiState.update { st ->
         val ids = if (id in st.splitIds) st.splitIds - id else st.splitIds + id
-        st.copy(splitIds = ids)
+        st.copy(splitIds = ids, splitTouched = true)
     }
     fun onSetSplitAmount(id: String, cents: Long) = _uiState.update { st ->
-        st.copy(amountDraft = st.amountDraft + (id to cents))
+        st.copy(amountDraft = st.amountDraft + (id to cents), splitTouched = true)
     }
     fun onSetSplitPercent(id: String, percent: Int) = _uiState.update { st ->
-        st.copy(percentDraft = st.percentDraft + (id to percent.coerceIn(0, 100)))
+        st.copy(percentDraft = st.percentDraft + (id to percent.coerceIn(0, 100)), splitTouched = true)
     }
 
     // ---- Number pad de la pantalla de división (monto pagador / monto split / porcentaje) ----
@@ -225,7 +246,7 @@ class AddMovementViewModel(
             SplitPadKind.SplitPercent ->
                 st.copy(percentDraft = st.percentDraft + (id to result.toInt().coerceIn(0, 100)))
         }
-        next.copy(splitPadTarget = null)
+        next.copy(splitPadTarget = null, splitTouched = true)
     }
 
     // ---- Hojas de selección de la pantalla de división ----
@@ -257,22 +278,6 @@ class AddMovementViewModel(
     }
     fun onRemoveItem(id: String) = _uiState.update { st ->
         st.copy(items = st.items.filterNot { it.id == id })
-    }
-
-    // ---- Devolución (Personal) ----
-    /** Alterna "Por devolver": None↔Pending. Un movimiento ya Devuelto se gestiona desde el detalle. */
-    fun onToggleReturnPending() = _uiState.update { st ->
-        val next = when (st.returnStatus) {
-            ReturnStatus.None -> ReturnStatus.Pending
-            ReturnStatus.Pending -> ReturnStatus.None
-            ReturnStatus.Returned -> ReturnStatus.Returned
-        }
-        st.copy(returnStatus = next)
-    }
-
-    /** Incluye/excluye una partida de la devolución (solo cuando el movimiento está Por devolver). */
-    fun onToggleItemReturnable(id: String) = _uiState.update { st ->
-        st.copy(items = st.items.map { if (it.id == id) it.copy(returnable = !it.returnable) else it })
     }
 
     // ---- Teclado numérico (cantidad de una partida) ----
@@ -321,11 +326,12 @@ class AddMovementViewModel(
         viewModelScope.launch {
             if (st.isEditing) movementRepository.update(movement)
             else movementRepository.add(movement)
-            // Alta nueva de Gastos donde "Tú" participa ⇒ ofrecer registrar tu parte como gasto Personal.
+            // Alta nueva de Gastos donde "Tú" participa ⇒ registrar tu parte como gasto Personal. El
+            // guard `!isEditing` es esencial: sin él, cada guardado de una edición duplicaría la copia.
             val myShare = if (!st.isEditing && useCase == UseCase.Gastos)
                 movement.splits.firstOrNull { it.personId == PersonRef.ME }?.share else null
             if (myShare != null && myShare.cents > 0L) {
-                personalCopy = Movement(
+                val copy = Movement(
                     id = newId(),
                     amount = myShare,
                     categoryId = movement.categoryId,
@@ -334,7 +340,15 @@ class AddMovementViewModel(
                     date = movement.date,
                     spaceId = "",
                 )
-                _saved.send(SaveResult.OfferPersonalCopy(Calc.formatAmount(myShare.major)))
+                val shareLabel = Calc.formatAmount(myShare.major)
+                if (st.rule.autoPersonalCopy) {
+                    // La regla del espacio ya lo autorizó: se registra sin diálogo.
+                    movementRepository.add(copy)
+                    _saved.send(SaveResult.PersonalCopySaved(shareLabel))
+                } else {
+                    personalCopy = copy
+                    _saved.send(SaveResult.OfferPersonalCopy(shareLabel))
+                }
             } else {
                 _saved.send(SaveResult.Done)
             }
@@ -366,8 +380,6 @@ class AddMovementViewModel(
             items = items,
             scanRawText = st.scanRawText,
             scanSource = st.scanSource,
-            returnStatus = if (useCase == UseCase.Personal) st.returnStatus else ReturnStatus.None,
-            returnPercent = if (useCase == UseCase.Personal) st.returnPercent else null,
         )
     }
 
@@ -377,7 +389,7 @@ class AddMovementViewModel(
 
     /** Resuelve la división del estado a centavos exactos según el modo elegido. */
     private fun resolveSplits(st: AddMovementUiState, total: Money): List<SplitShare> {
-        val ids = st.members.map { it.id }.filter { it in st.splitIds }
+        val ids = st.activeSplitIds
         return when (st.splitMode) {
             SplitMode.Equal -> SplitCalc.resolveEqual(total, ids)
             SplitMode.Amount -> ids.map { SplitShare(it, Money(st.amountDraft[it] ?: 0L)) }
@@ -392,7 +404,7 @@ class AddMovementViewModel(
 
     /** Error de validación de la división según el modo (null = cuadra). */
     fun splitError(st: AddMovementUiState): String? {
-        val ids = st.members.map { it.id }.filter { it in st.splitIds }
+        val ids = st.activeSplitIds
         return when (st.splitMode) {
             SplitMode.Equal -> if (ids.isEmpty()) "Selecciona al menos una persona" else null
             SplitMode.Amount -> SplitCalc.validateAmounts(st.total, ids.map { SplitShare(it, Money(st.amountDraft[it] ?: 0L)) })
@@ -402,8 +414,11 @@ class AddMovementViewModel(
     }
 }
 
-/** Resultado del guardado: cerrar sin más, u ofrecer registrar tu parte como gasto Personal. */
+/** Resultado del guardado: cerrar sin más, u ofrecer/registrar tu parte como gasto Personal. */
 sealed interface SaveResult {
     data object Done : SaveResult
     data class OfferPersonalCopy(val shareLabel: String) : SaveResult
+
+    /** La copia Personal se registró sola (regla del espacio con `autoPersonalCopy`); sin diálogo. */
+    data class PersonalCopySaved(val shareLabel: String) : SaveResult
 }

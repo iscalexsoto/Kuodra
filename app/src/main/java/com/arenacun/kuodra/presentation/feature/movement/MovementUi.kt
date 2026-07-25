@@ -6,13 +6,11 @@ import com.arenacun.kuodra.domain.model.Category
 import com.arenacun.kuodra.domain.model.DateLabels
 import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.PersonRef
-import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.adjustmentOf
 import com.arenacun.kuodra.domain.model.initialsOf
 import com.arenacun.kuodra.domain.model.toneForName
 import com.arenacun.kuodra.domain.usecase.MovementGroup
-import com.arenacun.kuodra.domain.usecase.ReturnCalc
 import java.time.LocalDate
 
 /**
@@ -37,12 +35,6 @@ data class MovementUi(
     val items: List<MovementItemUi>,
     /** "Ajuste" (total no detallado) formateado, o null si el movimiento no tiene desglose. */
     val adjustment: String?,
-    /** Estado de devolución (Personal); [ReturnStatus.None] = no participa. */
-    val returnStatus: ReturnStatus,
-    /** "Por devolver (75%)" / "Devuelto (70%)", o null si no participa. */
-    val returnLabel: String?,
-    /** Monto a devolver formateado (vivo si Pending, congelado si Returned), o null. */
-    val returnAmountLabel: String?,
 )
 
 /** Reparto de un movimiento dividido entre varias personas. */
@@ -62,7 +54,6 @@ fun Movement.toUi(
     categories: Map<String, Category>,
     useCase: UseCase,
     today: LocalDate,
-    returnPercent: Int = ReturnCalc.DEFAULT_RETURN_PERCENT,
     persons: Map<String, String> = emptyMap(),
 ): MovementUi {
     val cat = categories[categoryId] ?: Category.byId(categoryId)
@@ -93,18 +84,6 @@ fun Movement.toUi(
     val itemsUi = items.map { MovementItemUi(it.concept, Calc.formatAmount(it.amount.major)) }
     val adjustmentStr = if (items.isNotEmpty())
         Calc.formatAmount(adjustmentOf(amount, items).major) else null
-    val stampedPercent = returnPercent.takeIf { returnStatus == ReturnStatus.Pending }
-        ?: this.returnPercent ?: ReturnCalc.DEFAULT_RETURN_PERCENT
-    val returnLabel = when (returnStatus) {
-        ReturnStatus.Pending -> "Por devolver ($returnPercent%)"
-        ReturnStatus.Returned -> "Devuelto ($stampedPercent%)"
-        ReturnStatus.None -> null
-    }
-    val returnAmount = when (returnStatus) {
-        ReturnStatus.Pending -> ReturnCalc.returnAmount(this, returnPercent)
-        ReturnStatus.Returned -> ReturnCalc.returnedAmount(this)
-        ReturnStatus.None -> null
-    }
     return MovementUi(
         id = id,
         title = title.ifBlank { cat.name },
@@ -121,9 +100,6 @@ fun Movement.toUi(
         note = note,
         items = itemsUi,
         adjustment = adjustmentStr,
-        returnStatus = returnStatus,
-        returnLabel = returnLabel,
-        returnAmountLabel = returnAmount?.let { Calc.formatAmount(it.major) },
     )
 }
 
@@ -132,7 +108,6 @@ fun MovementGroup.toUi(
     categories: Map<String, Category>,
     useCase: UseCase,
     today: LocalDate,
-    returnPercent: Int = ReturnCalc.DEFAULT_RETURN_PERCENT,
     persons: Map<String, String> = emptyMap(),
 ): MovementGroupUi =
-    MovementGroupUi(header, movements.map { it.toUi(categories, useCase, today, returnPercent, persons) })
+    MovementGroupUi(header, movements.map { it.toUi(categories, useCase, today, persons) })

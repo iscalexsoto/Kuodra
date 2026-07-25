@@ -40,10 +40,6 @@ data class MovementDto(
     val scanRawText: String = "",
     /** Nombre del enum `ScanSource` (`Camera`/`Gallery`) o vacío. */
     val scanSource: String = "",
-    /** Nombre del enum `ReturnStatus` (`None`/`Pending`/`Returned`) o vacío ⇔ None. */
-    val returnStatus: String = "",
-    /** % de devolución congelado (Returned); 0 ⇔ sin estampar. */
-    val returnPercent: Int = 0,
     val deleted: Boolean = false,
     val updated: String = "",
 )
@@ -55,8 +51,6 @@ data class MovementItemDto(
     val concept: String = "",
     val amount: Long = 0,
     val payer: String? = null,
-    /** Personal: si la partida entra en la devolución. Legacy sin la clave ⇒ true. */
-    val returnable: Boolean = true,
 )
 
 /** Pagador de un gasto compartido (referencia por id). `amount` en centavos. Campo json. */
@@ -71,6 +65,29 @@ data class PayerShareDto(
 data class SplitShareDto(
     val personId: String = "",
     val share: Long = 0,
+)
+
+/**
+ * Regla de división por defecto de un espacio. Campo json en PocketBase; **la misma forma** se guarda
+ * en la columna `splitRuleJson` de Room. Todos los campos con default para que `{}` decodifique a la
+ * regla por defecto (espacios creados antes de existir la columna).
+ */
+@Serializable
+data class SplitRuleDto(
+    val enabled: Boolean = false,
+    /** Nombre del enum `SplitMode`: `Equal`/`Percent` (vacío/desconocido ⇒ Equal). */
+    val mode: String = "Equal",
+    val shares: List<SplitRuleShareDto> = emptyList(),
+    /** `"me"` (el dueño) o id de `persons`. */
+    val payer: String = "me",
+    val autoPersonalCopy: Boolean = false,
+)
+
+/** Participante de una regla de división y su porcentaje. Campo json. */
+@Serializable
+data class SplitRuleShareDto(
+    val personId: String = "",
+    val percent: Int = 0,
 )
 
 @Serializable
@@ -97,8 +114,6 @@ data class BudgetDto(
     val secondDay: Int = 16,
     val monthlyDay: Int = 1,
     val customInterval: Int = 15,
-    /** % global a devolver de los movimientos "Por devolver" (5..100). */
-    val returnPercent: Int = 75,
     val deleted: Boolean = false,
     val updated: String = "",
 )
@@ -134,6 +149,8 @@ data class SpaceDto(
     val name: String = "",
     val archived: Boolean = false,
     val reminderEnabled: Boolean = true,
+    /** División por defecto de los gastos del espacio. */
+    val splitRule: SplitRuleDto = SplitRuleDto(),
     val deleted: Boolean = false,
     val updated: String = "",
 )

@@ -7,9 +7,9 @@ import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.MovementItem
 import com.arenacun.kuodra.domain.model.PayerShare
 import com.arenacun.kuodra.domain.model.PersonRef
-import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SplitMode
+import com.arenacun.kuodra.domain.model.SplitRule
 import com.arenacun.kuodra.domain.model.adjustmentOf
 import com.arenacun.kuodra.domain.scan.ScanSource
 import com.arenacun.kuodra.presentation.component.CategoryDraft
@@ -60,6 +60,16 @@ data class AddMovementUiState(
     val splitPad: CalcState = CalcState(),
     /** Hoja de selección abierta en la pantalla de división (null = ninguna). */
     val splitSheet: SplitSheet? = null,
+    /**
+     * Regla de división del espacio, ya saneada; fuente del prellenado. `SplitRule.Default` = el
+     * espacio no tiene regla y se usa la heurística implícita.
+     */
+    val rule: SplitRule = SplitRule.Default,
+    /**
+     * true cuando la división ya la fijó el usuario (o la pre-carga de edición): la regla deja de
+     * re-aplicarse. Distingue "aún sin prellenar" de "el usuario deseleccionó a todos".
+     */
+    val splitTouched: Boolean = false,
     val sheet: AddSheet? = null,
     /** Borrador de nueva categoría dentro del selector (null = no se está creando). */
     val editingCategory: CategoryDraft? = null,
@@ -78,10 +88,6 @@ data class AddMovementUiState(
     val scanSource: ScanSource? = null,
     /** Nota original del movimiento en edición (sin UI; se preserva al guardar). */
     val note: String = "",
-    /** Estado de devolución (Personal). Se alterna con el FieldRow "Devolución". */
-    val returnStatus: ReturnStatus = ReturnStatus.None,
-    /** % congelado si el movimiento en edición ya estaba devuelto; se preserva al guardar. */
-    val returnPercent: Int? = null,
     /** true si el formulario pre-cargó un movimiento existente (guardar = actualizar). */
     val isEditing: Boolean = false,
 ) {
@@ -96,6 +102,16 @@ data class AddMovementUiState(
 
     /** Nombre a partir de un id de miembro. */
     fun memberName(id: String): String = members.firstOrNull { it.id == id }?.name ?: id
+
+    /** true si la división visible es el prellenado de la regla del espacio (nadie la ha tocado). */
+    val splitFromRule: Boolean get() = rule.enabled && !splitTouched
+
+    /**
+     * Participantes efectivos, en el orden de [members] (que es el que decide quién absorbe el centavo
+     * de remanente al resolver la división). Intersecta con [members] en lugar de podar [splitIds]: así
+     * un contacto que aún no ha cargado no borra la selección de un movimiento en edición.
+     */
+    val activeSplitIds: List<String> get() = members.map { it.id }.filter { it in splitIds }
 
     /** Resumen para el FieldRow de división: "Pagaste $500 · entre 4, equitativo". */
     val splitSummary: String
@@ -112,6 +128,7 @@ data class AddMovementUiState(
                 SplitMode.Percent -> "por porcentajes"
                 SplitMode.None -> "sin dividir"
             }
-            return "$payerLabel · entre ${splitIds.size}, $modeLabel"
+            val suffix = if (splitFromRule) " · por defecto" else ""
+            return "$payerLabel · entre ${activeSplitIds.size}, $modeLabel$suffix"
         }
 }

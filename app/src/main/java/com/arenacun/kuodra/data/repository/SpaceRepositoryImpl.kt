@@ -8,8 +8,10 @@ import com.arenacun.kuodra.data.local.SessionStore
 import com.arenacun.kuodra.data.local.db.SpaceDao
 import com.arenacun.kuodra.data.local.db.SpaceEntity
 import com.arenacun.kuodra.data.mapper.toDomain
+import com.arenacun.kuodra.data.mapper.toRuleJson
 import com.arenacun.kuodra.data.sync.SyncTrigger
 import com.arenacun.kuodra.domain.model.Space
+import com.arenacun.kuodra.domain.model.SplitRule
 import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.domain.model.newId
 import com.arenacun.kuodra.domain.repository.SpaceRepository
@@ -103,6 +105,8 @@ class SpaceRepositoryImpl(
         if (dataStore.data.first()[SPACE_ID] == id) selectPersonal()
     }
     override suspend fun unarchive(id: String) = mutate(id) { it.copy(archived = false) }
+    override suspend fun setSplitRule(id: String, rule: SplitRule) =
+        mutate(id) { it.copy(splitRuleJson = rule.toRuleJson()) }
 
     override suspend fun isConfigured(): Boolean = dataStore.data.first()[USE_CASE] != null
 

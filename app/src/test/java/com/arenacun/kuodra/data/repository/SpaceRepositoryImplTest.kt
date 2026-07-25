@@ -5,6 +5,9 @@ import com.arenacun.kuodra.data.local.SessionStore
 import com.arenacun.kuodra.data.local.db.SpaceDao
 import com.arenacun.kuodra.data.local.db.SpaceEntity
 import com.arenacun.kuodra.data.sync.SyncTrigger
+import com.arenacun.kuodra.domain.model.SplitMode
+import com.arenacun.kuodra.domain.model.SplitRule
+import com.arenacun.kuodra.domain.model.SplitRuleShare
 import com.arenacun.kuodra.domain.model.UseCase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,5 +75,25 @@ class SpaceRepositoryImplTest {
 
         val active = repo.activeSpace.first { it.useCase == UseCase.Personal }
         assertEquals(UseCase.Personal, active.useCase)
+    }
+
+    @Test
+    fun `setSplitRule persists the rule and marks the row dirty`() = runTest {
+        val dao = FakeSpaceDao()
+        val repo = newRepo(dao)
+        val space = repo.createSpace("Hermano")
+        dao.rows.value = dao.rows.value.map { it.copy(dirty = false) }
+        val rule = SplitRule(
+            enabled = true,
+            mode = SplitMode.Percent,
+            shares = listOf(SplitRuleShare("me", 25), SplitRuleShare("p1", 75)),
+            autoPersonalCopy = true,
+        )
+
+        repo.setSplitRule(space.id, rule)
+
+        assertEquals(true, dao.rows.value.single().dirty)
+        val active = repo.activeSpace.first { it.splitRule.enabled }
+        assertEquals(rule, active.splitRule)
     }
 }

@@ -11,6 +11,8 @@ data class Space(
     val archived: Boolean = false,
     /** Recordatorio de liquidación (solo Gastos). */
     val reminderEnabled: Boolean = true,
+    /** División por defecto de los gastos del espacio (solo Gastos). */
+    val splitRule: SplitRule = SplitRule.Default,
 ) {
     val terminology: Terminology get() = terminologyFor(useCase)
     val displayName: String get() = name.ifBlank { terminology.groupName }

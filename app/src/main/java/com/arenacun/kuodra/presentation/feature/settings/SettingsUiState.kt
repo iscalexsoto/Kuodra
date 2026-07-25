@@ -1,6 +1,7 @@
 package com.arenacun.kuodra.presentation.feature.settings
 
 import com.arenacun.kuodra.domain.model.CalcState
+import com.arenacun.kuodra.domain.model.PersonRef
 import com.arenacun.kuodra.domain.model.SpacePerson
 import com.arenacun.kuodra.domain.model.SpaceSettings
 import com.arenacun.kuodra.domain.model.ThemeMode
@@ -35,4 +36,16 @@ data class SettingsUiState(
     val accountName: String = "",
     /** Borrador de edición del nombre de usuario (null = sheet cerrado). */
     val editingName: String? = null,
-)
+    /** Persona cuyo % de la regla se edita en el number pad (null = cerrado). */
+    val rulePadPersonId: String? = null,
+    /** Estado de trabajo del number pad de porcentajes mientras el diálogo está abierto. */
+    val rulePad: CalcState = CalcState(),
+    /** Aviso si la regla está incompleta (p. ej. "Suman 90%"); null = cuadra o está apagada. */
+    val splitRuleError: String? = null,
+) {
+    /** Candidatos de la regla: "Tú" + contactos, en el mismo orden que en el alta de gastos. */
+    val ruleMembers: List<SpacePerson>
+        get() = listOf(SpacePerson(PersonRef.ME, "Tú")) + contacts
+
+    fun ruleMemberName(id: String): String = ruleMembers.firstOrNull { it.id == id }?.name ?: id
+}

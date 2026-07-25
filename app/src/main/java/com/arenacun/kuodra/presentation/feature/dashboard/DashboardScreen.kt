@@ -129,11 +129,6 @@ fun DashboardScreen(
 
                 DashboardHero(c, uc, t.heroLabel, state.personalHero, state.gastosHero)
 
-                state.pendingReturns?.let { pending ->
-                    Spacer(Modifier.height(12.dp))
-                    PendingReturnsCard(c, pending, viewModel::onMarkAllReturned)
-                }
-
                 if (uc != UseCase.Personal) {
                     Spacer(Modifier.height(12.dp))
                     SettleAction(c, uc, onSettle)
@@ -204,12 +199,6 @@ fun DashboardScreen(
         }
         DashboardSheet.PClosed -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             ClosePeriodDoneSheet(c, onClose = viewModel::onCloseSheet)
-        }
-        DashboardSheet.ReturnAllConfirm -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            ReturnAllConfirmSheet(c, state.pendingReturns, onClose = viewModel::onCloseSheet, onConfirm = viewModel::onMarkAllReturnedConfirm)
-        }
-        DashboardSheet.ReturnAllDone -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
-            ReturnAllDoneSheet(c, onClose = viewModel::onCloseSheet)
         }
         DashboardSheet.AddOptions -> KuodraBottomSheet(onDismiss = viewModel::onCloseSheet) {
             AddOptionsSheetContent(
@@ -659,88 +648,6 @@ private fun DashboardHero(c: KuodraColors, uc: UseCase, heroLabel: String, perso
                 HeroStat(c, "Debes", gastosHero.oweLabel, Modifier.weight(1f))
             }
         }
-    }
-}
-
-/** Tarjeta "Por cobrar" (Personal): total de todos los pendientes + acción de liquidación masiva. */
-@Composable
-private fun PendingReturnsCard(c: KuodraColors, pending: PendingReturnsUi, onMarkAll: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface)
-            .border(1.dp, c.line, Kuodra.shape.xl).padding(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-            Box(
-                Modifier.size(42.dp).clip(Kuodra.shape.md).background(c.posTint),
-                contentAlignment = Alignment.Center,
-            ) { Box(Modifier.size(width = 16.dp, height = 12.dp).clip(Kuodra.shape.sm).border(2.dp, c.pos, Kuodra.shape.sm)) }
-            Column(Modifier.weight(1f)) {
-                Text("Por cobrar", style = Kuodra.type.caption, color = c.ink3)
-                Text(pending.totalLabel, style = Kuodra.type.titleScreen, color = c.pos,
-                    modifier = Modifier.padding(top = 2.dp))
-            }
-        }
-        Text(pending.caption, style = Kuodra.type.caption, color = c.ink3,
-            modifier = Modifier.padding(top = 10.dp, start = 2.dp))
-        Box(
-            Modifier.fillMaxWidth().padding(top = 14.dp).clip(Kuodra.shape.lg).background(c.surface2)
-                .border(1.dp, c.line, Kuodra.shape.lg).clickable(onClick = onMarkAll).padding(vertical = 14.dp),
-            contentAlignment = Alignment.Center,
-        ) { Text("Marcar todo como devuelto", style = Kuodra.type.heading, color = c.ink) }
-    }
-}
-
-/** Confirmación de "marcar todo como devuelto" (Personal): congela el % vigente en cada movimiento. */
-@Composable
-private fun ReturnAllConfirmSheet(c: KuodraColors, pending: PendingReturnsUi?, onClose: () -> Unit, onConfirm: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-        SheetHeader(c, "Marcar como devuelto", onClose)
-        Column(Modifier.padding(horizontal = 20.dp)) {
-            Column(Modifier.fillMaxWidth().clip(Kuodra.shape.xl).background(c.surface2).padding(17.dp)) {
-                Text("Total por cobrar", style = Kuodra.type.caption, color = c.ink3)
-                Text(pending?.totalLabel ?: "$0", style = Kuodra.type.titleScreen, color = c.pos,
-                    modifier = Modifier.padding(top = 4.dp))
-                pending?.let {
-                    Text(it.caption, style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(top = 4.dp))
-                }
-            }
-            Text("Se marcarán como devueltos y se congelará el porcentaje vigente en cada movimiento. No cambiará aunque reajustes el porcentaje después.",
-                style = Kuodra.type.caption, color = c.ink3,
-                modifier = Modifier.padding(top = 16.dp, bottom = 18.dp, start = 2.dp, end = 2.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.surface2)
-                        .border(1.dp, c.line, Kuodra.shape.lg).clickable(onClick = onClose).padding(vertical = 15.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Text("Cancelar", style = Kuodra.type.heading, color = c.ink) }
-                Box(
-                    Modifier.weight(1f).clip(Kuodra.shape.lg).background(c.primary)
-                        .clickable(onClick = onConfirm).padding(vertical = 15.dp),
-                    contentAlignment = Alignment.Center,
-                ) { Text("Marcar todo", style = Kuodra.type.heading, color = c.primaryInk) }
-            }
-        }
-    }
-}
-
-/** Confirmación tras marcar todo como devuelto. */
-@Composable
-private fun ReturnAllDoneSheet(c: KuodraColors, onClose: () -> Unit) {
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 8.dp, bottom = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(Modifier.size(56.dp).clip(Kuodra.shape.pill).background(c.posTint), contentAlignment = Alignment.Center) {
-            Text("✓", style = Kuodra.type.displayAmount, color = c.pos)
-        }
-        Text("Marcados como devueltos", style = Kuodra.type.heading, color = c.ink, modifier = Modifier.padding(top = 12.dp))
-        Text("Quedan registrados con el porcentaje vigente.", style = Kuodra.type.caption, color = c.ink2,
-            modifier = Modifier.padding(top = 4.dp))
-        Box(
-            Modifier.fillMaxWidth().padding(top = 18.dp).clip(Kuodra.shape.lg).background(c.primary)
-                .clickable(onClick = onClose).padding(vertical = 15.dp),
-            contentAlignment = Alignment.Center,
-        ) { Text("Entendido", style = Kuodra.type.heading, color = c.primaryInk) }
     }
 }
 

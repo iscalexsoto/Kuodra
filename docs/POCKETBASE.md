@@ -221,11 +221,9 @@ last-write-wins. En todas, `id`/`created`/`updated` son de sistema (el cliente e
 | `splitMode`  | text     | Modo de división elegido en la captura: `None`/`Equal`/`Amount`/`Percent`. |
 | `splits`     | json     | División resuelta a centavos (Gastos): `[{personId, share(centavos)}]`; suma el total. **Obligatorio crearlo antes de desplegar**. |
 | `settlementId`| text    | Id del corte que liquidó el gasto; vacío = vivo (cuenta en balances). |
-| `items`      | json     | Partidas del desglose: `[{id, concept, amount(centavos), payer, returnable}]`; `[]` = sin detalle. `returnable` (bool, default true) marca si la partida entra en la devolución (Personal). **Obligatorio crearlo**: sin esta columna PocketBase ignora el campo del DTO y el pull del sync borra las partidas locales. |
+| `items`      | json     | Partidas del desglose: `[{id, concept, amount(centavos), payer}]`; `[]` = sin detalle. **Obligatorio crearlo**: sin esta columna PocketBase ignora el campo del DTO y el pull del sync borra las partidas locales. |
 | `scanRawText`| text     | Opcional. Raw OCR del ticket si el movimiento nació de un escaneo (puede ser largo; material para los templates futuros). |
 | `scanSource` | text     | Opcional. `Camera`/`Gallery` (nombre del enum `ScanSource`); vacío = captura manual. |
-| `returnStatus` | text   | Estado de devolución (Personal): `None`/`Pending`/`Returned` (nombre del enum `ReturnStatus`); vacío = None. **Obligatorio crearlo antes de desplegar**: sin la columna, el pull del sync borra el estado local. |
-| `returnPercent`| number | % de devolución congelado al marcar `Returned` (Personal); 0/vacío = sin estampar. **Obligatorio crearlo antes de desplegar** (misma advertencia). |
 | `deleted`    | bool     | Tombstone: borrado lógico para propagar la baja.               |
 
 ### `categories` (tipo: Base)
@@ -243,9 +241,8 @@ last-write-wins. En todas, `id`/`created`/`updated` son de sistema (el cliente e
 
 ### `budgets` (tipo: Base)
 
-Una fila por usuario; el **id del registro es el `owner`** (el cliente lo crea con ese id). De facto
-es el **registro de ajustes Personal**: además del presupuesto guarda `returnPercent` (el % global de
-devoluciones), que es independiente de `enabled`.
+Una fila por usuario; el **id del registro es el `owner`** (el cliente lo crea con ese id). Guarda el
+presupuesto Personal: la frecuencia elegida decide cuál de los campos de día aplica.
 
 | Campo            | Tipo     | Notas                                    |
 |------------------|----------|------------------------------------------|
@@ -258,7 +255,6 @@ devoluciones), que es independiente de `enabled`.
 | `secondDay`      | number   |                                          |
 | `monthlyDay`     | number   |                                          |
 | `customInterval` | number   |                                          |
-| `returnPercent`  | number   | % global a devolver de los movimientos "Por devolver" (5..100; default 75). **Obligatorio crearlo antes de desplegar**: sin la columna, el pull revierte el % local al default. |
 | `deleted`        | bool     |                                          |
 
 ### `period_snapshots` (tipo: Base)
@@ -286,6 +282,7 @@ un usuario puede tener varios. La app es single-admin; no hay miembros con cuent
 | `name`           | text   | Nombre del espacio.                                |
 | `archived`       | bool   | Guardado sin borrar (p. ej. viaje terminado).      |
 | `reminderEnabled`| bool   | Recordatorio de liquidación.                       |
+| `splitRule`      | json   | División por defecto del espacio: `{enabled, mode(`Equal`/`Percent`), shares:[{personId, percent}], payer, autoPersonalCopy}`; `{}` = sin regla. `personId`/`payer` = `"me"` (el dueño) o id de `persons`. **Obligatorio crearlo antes de desplegar**: sin la columna PocketBase ignora el campo del DTO y el pull del sync borra la regla local. |
 | `deleted`        | bool   | Tombstone.                                          |
 
 ### `persons` (tipo: Base) — contactos de un espacio
@@ -481,6 +478,8 @@ Escaneo de tickets:
 
 | Fecha      | Cambio                                                                 |
 |------------|------------------------------------------------------------------------|
+| 2026-07-24 | División por defecto por espacio: nuevo campo `splitRule` (json) en `spaces`. Sustituye a las devoluciones de Personal. **Crearlo antes de desplegar** (si no, el pull borra la regla local). |
+| 2026-07-24 | Devoluciones **eliminadas del producto**: el cliente ya no manda `returnStatus`/`returnPercent` (`movements`), `returnPercent` (`budgets`) ni la clave `returnable` del json `items`. Las columnas se pueden borrar del servidor; dejarlas es inocuo (el cliente decodifica con `ignoreUnknownKeys`). Su lugar lo toma la regla de división por espacio (entrada siguiente). |
 | 2026-07-24 | Liquidación parcial: la colección `settlements` gana `kind` (text, default `"Corte"`; `"Payment"` = pago individual) y `settledBy` (text, id del corte que consumió un pago). Crear ambas columnas **antes** de desplegar (si no, el pull las pierde). Sin nuevas colecciones. |
 | 2026-07-24 | Gastos compartidos por id: las columnas legacy `payer`/`splitNames` de `movements` quedan sin uso (el cliente usa `payers`/`splits`). Se pueden eliminar del servidor; no es urgente (columnas ignoradas no rompen nada). |
 | 2026-07-23 | Gastos compartidos: nuevas colecciones `spaces`, `persons`, `settlements` (Base, mismas API rules multi-tenant) + columnas `space`/`payers`/`splitMode`/`splits`/`settlementId` en `movements`. Crear todo **antes** de desplegar el cliente (sin las columnas de `movements` el pull borra los datos locales). |

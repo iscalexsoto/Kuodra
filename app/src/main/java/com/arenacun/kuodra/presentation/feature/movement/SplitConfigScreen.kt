@@ -60,7 +60,7 @@ fun SplitConfigScreen(
 
     val equalShares = if (state.splitMode == SplitMode.Equal)
         com.arenacun.kuodra.domain.usecase.SplitCalc
-            .resolveEqual(state.total, state.members.map { it.id }.filter { it in state.splitIds })
+            .resolveEqual(state.total, state.activeSplitIds)
             .associate { it.personId to it.share } else emptyMap()
 
     Column(
@@ -78,6 +78,25 @@ fun SplitConfigScreen(
 
         Text("Total del gasto: ${state.amountLabel}", style = Kuodra.type.caption, color = c.ink3,
             modifier = Modifier.padding(start = 2.dp, bottom = 8.dp))
+
+        // La regla del espacio ya prellenó esta pantalla: se avisa de dónde viene y que el cambio es
+        // solo para este gasto, o se ofrece volver a ella si ya se tocó.
+        if (state.splitFromRule) {
+            Text(
+                "Esta división viene de los ajustes del grupo. Cámbiala aquí solo para este gasto.",
+                style = Kuodra.type.caption, color = c.tintInk,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(Kuodra.shape.md)
+                    .background(c.tint).padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        } else if (state.rule.enabled) {
+            Box(
+                Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(Kuodra.shape.md)
+                    .border(1.dp, c.line, Kuodra.shape.md)
+                    .clickable(onClick = viewModel::onResetSplitToRule)
+                    .padding(vertical = 11.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("Restablecer la división del grupo", style = Kuodra.type.body, color = c.primary) }
+        }
 
         // ===== Pagadores =====
         SectionHeader(c, "¿QUIÉN PAGÓ?", payersError)

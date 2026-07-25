@@ -15,8 +15,6 @@ data class DashboardUiState(
     val personalHero: PersonalHero? = null,
     /** Datos del hero para Gastos (balances). Null en Personal. */
     val gastosHero: GastosHero? = null,
-    /** Total "por cobrar" de todos los movimientos por devolver (Personal). Null si no hay ninguno. */
-    val pendingReturns: PendingReturnsUi? = null,
     /** Subtítulo de miembros del encabezado (Gastos): "Solo tú" / "N miembros". Null en Personal. */
     val membersLabel: String? = null,
     /** Gastos: hay saldos vivos sin liquidar (para el banner de recordatorio). */
@@ -31,12 +29,6 @@ data class GastosHero(
     val owedLabel: String,
     val oweLabel: String,
     val positive: Boolean,
-)
-
-/** Resumen del total por cobrar del dashboard Personal (suma de todos los "Por devolver"). */
-data class PendingReturnsUi(
-    val totalLabel: String,
-    val caption: String,
 )
 
 /**
@@ -77,12 +69,10 @@ data class CategoryBreakdown(
  * - [Spaces] selector "Tus espacios" (al tocar el título).
  * - [Menu] menú de acciones del espacio actual (botón ···).
  * - [PCloseConfirm] confirmación de cerrar periodo (Personal); [PClosed] éxito.
- * - [ReturnAllConfirm] confirmación de marcar todo como devuelto (Personal); [ReturnAllDone] éxito.
  * - [AddOptions] las 3 vías de alta al tocar el FAB "Agregar" (escanear/galería/manual).
  */
 enum class DashboardSheet {
-    None, Spaces, Menu, PCloseConfirm, PClosed,
-    ReturnAllConfirm, ReturnAllDone, AddOptions,
+    None, Spaces, Menu, PCloseConfirm, PClosed, AddOptions,
 }
 
 /** Estado de los overlays del dashboard: hoja inferior activa. */

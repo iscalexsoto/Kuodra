@@ -12,7 +12,6 @@ import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.Person
 import com.arenacun.kuodra.domain.model.PersonRef
-import com.arenacun.kuodra.domain.model.ReturnStatus
 import com.arenacun.kuodra.domain.model.Settlement
 import com.arenacun.kuodra.domain.model.SettlementKind
 import com.arenacun.kuodra.domain.model.SpacePerson
@@ -33,7 +32,6 @@ import com.arenacun.kuodra.domain.repository.SpaceRepository
 import com.arenacun.kuodra.domain.repository.SummaryRepository
 import com.arenacun.kuodra.domain.usecase.BudgetPeriod
 import com.arenacun.kuodra.domain.usecase.ClosePeriod
-import com.arenacun.kuodra.domain.usecase.ReturnCalc
 import com.arenacun.kuodra.presentation.feature.movement.toUi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
@@ -77,18 +75,16 @@ class DashboardViewModel(
                 settlementRepository.settlements(space.id),
             ) { movements, settings, people, settlements ->
                 val categories = summaryRepository.categories().associateBy { it.id }
-                val percent = settings.budget?.returnPercent ?: ReturnCalc.DEFAULT_RETURN_PERCENT
                 val persons = people.associate { it.id to it.name }
                 val gastos = space.useCase == UseCase.Gastos
                 val payments = livePayments(settlements)
                 DashboardUiState(
                     space = space,
-                    movements = movements.map { it.toUi(categories, space.useCase, today, percent, persons) },
+                    movements = movements.map { it.toUi(categories, space.useCase, today, persons) },
                     people = if (gastos) peopleBalances(movements, payments, people) else emptyList(),
                     categories = breakdown(movements, categories),
                     personalHero = if (space.useCase == UseCase.Personal) personalHero(movements, settings) else null,
                     gastosHero = if (gastos) gastosHero(movements, payments) else null,
-                    pendingReturns = if (space.useCase == UseCase.Personal) pendingReturns(movements, percent) else null,
                     membersLabel = if (gastos) membersLabel(people) else null,
                     hasUnsettledBalances = gastos && SharedBalances.compute(movements, payments).isNotEmpty(),
                 )
@@ -140,25 +136,6 @@ class DashboardViewModel(
         }
     }
 
-    // ---- Marcar todo como devuelto (Personal) ----
-    fun onMarkAllReturned() = menu.update { it.copy(sheet = DashboardSheet.ReturnAllConfirm) }
-
-    /** Estampa el % global vigente en cada movimiento por devolver y los pasa a Devuelto. */
-    fun onMarkAllReturnedConfirm() {
-        viewModelScope.launch {
-            val useCase = spaceRepository.activeSpace.value.useCase
-            if (useCase == UseCase.Personal) {
-                val percent = settingsRepository.settings().value.budget?.returnPercent
-                    ?: ReturnCalc.DEFAULT_RETURN_PERCENT
-                val movements = movementRepository.movements("").first()
-                movements.filter { it.returnStatus == ReturnStatus.Pending }.forEach { m ->
-                    movementRepository.update(m.copy(returnStatus = ReturnStatus.Returned, returnPercent = percent))
-                }
-            }
-            menu.update { it.copy(sheet = DashboardSheet.ReturnAllDone) }
-        }
-    }
-
     /**
      * Personas del dashboard Gastos con su saldo (desde los movimientos vivos). Neto de una persona
      * < 0 ⇒ debe al grupo ("te debe" desde tu vista); > 0 ⇒ el grupo le debe ("le debes").
@@ -202,17 +179,6 @@ class DashboardViewModel(
             owedLabel = Calc.formatAmount(owed / 100.0),
             oweLabel = Calc.formatAmount(owe / 100.0),
             positive = net >= 0,
-        )
-    }
-
-    /** Total "por cobrar": suma del reembolso vivo de TODOS los pendientes (sin ventana de periodo). */
-    private fun pendingReturns(movements: List<Movement>, percent: Int): PendingReturnsUi? {
-        val pending = movements.filter { it.returnStatus == ReturnStatus.Pending }
-        if (pending.isEmpty()) return null
-        val total = ReturnCalc.pendingTotal(pending, percent)
-        return PendingReturnsUi(
-            totalLabel = Calc.formatAmount(total.major),
-            caption = "${pending.size} ${if (pending.size == 1) "movimiento" else "movimientos"} por devolver · $percent%",
         )
     }
 

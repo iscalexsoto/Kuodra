@@ -26,7 +26,10 @@ import androidx.room.TypeConverters
     // ya configurada; el sync repuebla los datos desde PocketBase tras limpiar cursores.
     // v11: liquidación parcial — `settlements` gana `kind` (Corte/Payment) y `settledBy` (pagos
     // consumidos por un corte). Bump destructivo; el sync repuebla.
-    version = 11,
+    // v12: devoluciones eliminadas del producto — `movements` pierde `returnStatus`/`returnPercent`,
+    // el json `items` pierde `returnable` y `budget` pierde `returnPercent`. Su lugar lo toma la
+    // regla de división por espacio, que añade `splitRuleJson` a `spaces`.
+    version = 12,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)

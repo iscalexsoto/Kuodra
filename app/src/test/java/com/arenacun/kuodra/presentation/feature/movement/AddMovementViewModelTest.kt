@@ -7,7 +7,11 @@ import com.arenacun.kuodra.domain.model.Money
 import com.arenacun.kuodra.domain.model.Movement
 import com.arenacun.kuodra.domain.model.MovementItem
 import com.arenacun.kuodra.domain.model.Space
+import com.arenacun.kuodra.domain.model.PersonRef
 import com.arenacun.kuodra.domain.model.SpacePerson
+import com.arenacun.kuodra.domain.model.SplitMode
+import com.arenacun.kuodra.domain.model.SplitRule
+import com.arenacun.kuodra.domain.model.SplitRuleShare
 import com.arenacun.kuodra.domain.model.SplitShare
 import com.arenacun.kuodra.domain.repository.CategoryRepository
 import com.arenacun.kuodra.domain.repository.MovementRepository
@@ -52,6 +56,7 @@ class AddMovementViewModelTest {
         override suspend fun setReminder(id: String, enabled: Boolean) = Unit
         override suspend fun archive(id: String) = Unit
         override suspend fun unarchive(id: String) = Unit
+        override suspend fun setSplitRule(id: String, rule: SplitRule) = Unit
         override suspend fun isConfigured(): Boolean = true
     }
 
@@ -273,9 +278,16 @@ class AddMovementViewModelTest {
 
     // ---- División (Gastos) ----
 
-    private class GastosSpaceRepository : SpaceRepository {
-        override val activeSpace: StateFlow<Space> =
-            MutableStateFlow(Space(id = "s1", useCase = com.arenacun.kuodra.domain.model.UseCase.Gastos, name = "Casa"))
+    private class GastosSpaceRepository(rule: SplitRule = SplitRule.Default) : SpaceRepository {
+        private val space = MutableStateFlow(
+            Space(
+                id = "s1",
+                useCase = com.arenacun.kuodra.domain.model.UseCase.Gastos,
+                name = "Casa",
+                splitRule = rule,
+            ),
+        )
+        override val activeSpace: StateFlow<Space> = space
         override val spaces: Flow<List<Space>> = MutableStateFlow(emptyList())
         override fun selectPersonal() = Unit
         override fun selectSpace(id: String) = Unit
@@ -284,6 +296,9 @@ class AddMovementViewModelTest {
         override suspend fun setReminder(id: String, enabled: Boolean) = Unit
         override suspend fun archive(id: String) = Unit
         override suspend fun unarchive(id: String) = Unit
+        override suspend fun setSplitRule(id: String, rule: SplitRule) {
+            space.update { it.copy(splitRule = rule) }
+        }
         override suspend fun isConfigured(): Boolean = true
     }
 
@@ -299,6 +314,38 @@ class AddMovementViewModelTest {
         editId = null,
         spaceRepository = GastosSpaceRepository(),
         personRepository = TwoPersonRepository(),
+        categoryRepository = FakeCategoryRepository(),
+        movementRepository = repository,
+    )
+
+    /** Repositorio de personas que emite cuando el test lo decide (para probar carreras de carga). */
+    private class LatePersonRepository(
+        private val people: MutableStateFlow<List<SpacePerson>> = MutableStateFlow(emptyList()),
+    ) : PersonRepository {
+        override fun persons(spaceId: String): Flow<List<SpacePerson>> = people
+        override suspend fun add(spaceId: String, person: SpacePerson) = Unit
+        override suspend fun update(spaceId: String, person: SpacePerson) = Unit
+        override suspend fun delete(id: String) = Unit
+        fun emit(list: List<SpacePerson>) { people.value = list }
+    }
+
+    /** Acuerdo fijo del caso motivador: "Tú" 25% / hermano 75%, en modo Percent. */
+    private fun brotherRule(autoPersonalCopy: Boolean = false) = SplitRule(
+        enabled = true,
+        mode = SplitMode.Percent,
+        shares = listOf(SplitRuleShare(PersonRef.ME, 25), SplitRuleShare("a", 75)),
+        autoPersonalCopy = autoPersonalCopy,
+    )
+
+    private fun ruleViewModel(
+        repository: FakeMovementRepository,
+        rule: SplitRule,
+        editId: String? = null,
+        personRepository: PersonRepository = TwoPersonRepository(),
+    ) = AddMovementViewModel(
+        editId = editId,
+        spaceRepository = GastosSpaceRepository(rule),
+        personRepository = personRepository,
         categoryRepository = FakeCategoryRepository(),
         movementRepository = repository,
     )
@@ -443,6 +490,149 @@ class AddMovementViewModelTest {
         vm.onSave()
         advanceUntilIdle()
 
+        assertTrue(results.single() is SaveResult.Done)
+        job.cancel()
+    }
+
+    // ---- Regla de división por defecto del espacio ----
+
+    @Test
+    fun `space rule prefills participants mode percents and payer`() = runTest {
+        val vm = ruleViewModel(FakeMovementRepository(), brotherRule().copy(payerId = "a"))
+        advanceUntilIdle()
+
+        val st = vm.uiState.value
+        assertEquals(SplitMode.Percent, st.splitMode)
+        assertEquals(setOf(PersonRef.ME, "a"), st.splitIds)
+        assertEquals(25, st.percentDraft[PersonRef.ME])
+        assertEquals(75, st.percentDraft["a"])
+        assertEquals("a", st.payers.single().personId)
+        assertTrue(st.splitFromRule)
+    }
+
+    @Test
+    fun `percent rule resolves to exact cents on save`() = runTest {
+        val repository = FakeMovementRepository()
+        val vm = ruleViewModel(repository, brotherRule())
+        advanceUntilIdle()
+        vm.applyScan(scan(total = Money(100000))) // $1000 ⇒ 250 / 750
+        vm.onSave()
+        advanceUntilIdle()
+
+        val saved = repository.added.single { it.spaceId == "s1" }
+        assertEquals(100000L, saved.splits.sumOf { it.share.cents })
+        assertEquals(25000L, saved.splits.single { it.personId == PersonRef.ME }.share.cents)
+        assertEquals(75000L, saved.splits.single { it.personId == "a" }.share.cents)
+        // Un pagador único cubre el total aunque la regla no lo haya tocado.
+        assertEquals(100000L, saved.payers.single().amount.cents)
+    }
+
+    @Test
+    fun `rule does not overwrite the split of an edited movement`() = runTest {
+        val existing = existingMovement().copy(
+            spaceId = "s1",
+            splitMode = SplitMode.Equal,
+            splits = listOf(SplitShare(PersonRef.ME, Money(15000)), SplitShare("b", Money(15000))),
+        )
+        val vm = ruleViewModel(FakeMovementRepository(listOf(existing)), brotherRule(), editId = "m1")
+        advanceUntilIdle()
+
+        val st = vm.uiState.value
+        assertEquals(setOf(PersonRef.ME, "b"), st.splitIds)
+        assertEquals(SplitMode.Equal, st.splitMode)
+        assertFalse(st.splitFromRule)
+    }
+
+    @Test
+    fun `rule does not overwrite an edited split when the contacts arrive late`() = runTest {
+        // La misma carrera al revés: la pre-carga corre antes de que existan las personas.
+        val existing = existingMovement().copy(
+            spaceId = "s1",
+            splitMode = SplitMode.Equal,
+            splits = listOf(SplitShare(PersonRef.ME, Money(15000)), SplitShare("b", Money(15000))),
+        )
+        val persons = LatePersonRepository()
+        val vm = ruleViewModel(
+            FakeMovementRepository(listOf(existing)), brotherRule(),
+            editId = "m1", personRepository = persons,
+        )
+        advanceUntilIdle()
+
+        persons.emit(listOf(SpacePerson("a", "Andrea"), SpacePerson("b", "Beto")))
+        advanceUntilIdle()
+
+        assertEquals(setOf(PersonRef.ME, "b"), vm.uiState.value.splitIds)
+        assertEquals(SplitMode.Equal, vm.uiState.value.splitMode)
+    }
+
+    @Test
+    fun `touching the split stops the rule from re-applying`() = runTest {
+        val persons = LatePersonRepository(MutableStateFlow(listOf(SpacePerson("a", "Andrea"))))
+        val vm = ruleViewModel(FakeMovementRepository(), brotherRule(), personRepository = persons)
+        advanceUntilIdle()
+
+        vm.onToggleSplitMember("a") // saca al hermano de este gasto
+        assertEquals(setOf(PersonRef.ME), vm.uiState.value.splitIds)
+
+        // Una emisión nueva de contactos no debe deshacer la elección del usuario.
+        persons.emit(listOf(SpacePerson("a", "Andrea"), SpacePerson("b", "Beto")))
+        advanceUntilIdle()
+
+        assertEquals(setOf(PersonRef.ME), vm.uiState.value.splitIds)
+        assertFalse(vm.uiState.value.splitFromRule)
+    }
+
+    @Test
+    fun `onResetSplitToRule restores the rule prefill`() = runTest {
+        val vm = ruleViewModel(FakeMovementRepository(), brotherRule())
+        advanceUntilIdle()
+        vm.onSetSplitMode(SplitMode.Equal)
+        vm.onToggleSplitMember("a")
+        assertFalse(vm.uiState.value.splitFromRule)
+
+        vm.onResetSplitToRule()
+
+        val st = vm.uiState.value
+        assertEquals(SplitMode.Percent, st.splitMode)
+        assertEquals(setOf(PersonRef.ME, "a"), st.splitIds)
+        assertTrue(st.splitFromRule)
+    }
+
+    @Test
+    fun `autoPersonalCopy records the personal movement without offering the dialog`() = runTest {
+        val repository = FakeMovementRepository()
+        val vm = ruleViewModel(repository, brotherRule(autoPersonalCopy = true))
+        advanceUntilIdle()
+        vm.applyScan(scan(total = Money(100000))) // tu parte: 25% = $250
+
+        val results = mutableListOf<SaveResult>()
+        val job = launch { vm.saved.collect { results += it } }
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertEquals(2, repository.added.size)
+        assertEquals(25000L, repository.added.single { it.spaceId == "" }.amount.cents)
+        assertTrue(results.single() is SaveResult.PersonalCopySaved)
+        job.cancel()
+    }
+
+    @Test
+    fun `autoPersonalCopy does not duplicate the personal copy when editing`() = runTest {
+        val existing = existingMovement().copy(
+            spaceId = "s1",
+            splits = listOf(SplitShare(PersonRef.ME, Money(25000))),
+        )
+        val repository = FakeMovementRepository(listOf(existing))
+        val vm = ruleViewModel(repository, brotherRule(autoPersonalCopy = true), editId = "m1")
+        advanceUntilIdle()
+
+        val results = mutableListOf<SaveResult>()
+        val job = launch { vm.saved.collect { results += it } }
+        vm.onSave()
+        advanceUntilIdle()
+
+        assertTrue(repository.added.isEmpty())
+        assertEquals(1, repository.updated.size)
         assertTrue(results.single() is SaveResult.Done)
         job.cancel()
     }

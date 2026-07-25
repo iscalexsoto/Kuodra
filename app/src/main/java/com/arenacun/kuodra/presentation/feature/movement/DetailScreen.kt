@@ -21,18 +21,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.arenacun.kuodra.domain.model.Calc
-import com.arenacun.kuodra.domain.model.ReturnStatus
-import com.arenacun.kuodra.domain.model.UseCase
 import com.arenacun.kuodra.presentation.component.BackCircle
 import com.arenacun.kuodra.presentation.component.KuodraNumberPad
 import com.arenacun.kuodra.presentation.component.PlusIcon
 import com.arenacun.kuodra.presentation.theme.Kuodra
-import com.arenacun.kuodra.presentation.theme.KuodraColors
 
 /**
  * Pantalla dedicada del **detalle** (partidas) de un movimiento. Comparte el [AddMovementViewModel]
@@ -46,9 +42,7 @@ fun DetailScreen(
     viewModel: AddMovementViewModel,
 ) {
     val c = Kuodra.colors
-    val space by viewModel.space.collectAsStateWithLifecycle()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val showReturnable = space.useCase == UseCase.Personal && state.returnStatus == ReturnStatus.Pending
 
     val done = { viewModel.onCloseDetail(); onBack() }
 
@@ -65,9 +59,7 @@ fun DetailScreen(
         // ===== Lista scrollable (solo esta parte crece/scrollea) =====
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
             Text(
-                if (showReturnable)
-                    "Marca qué partidas entran en la devolución. Lo no detallado queda como Ajuste."
-                else "Desglosa el gasto en partidas. Lo no detallado queda como Ajuste.",
+                "Desglosa el gasto en partidas. Lo no detallado queda como Ajuste.",
                 style = Kuodra.type.caption, color = c.ink3, modifier = Modifier.padding(bottom = 10.dp, start = 2.dp),
             )
 
@@ -79,11 +71,6 @@ fun DetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (showReturnable) {
-                        Box(Modifier.clickable { viewModel.onToggleItemReturnable(item.id) }) {
-                            CheckMark(c, item.returnable)
-                        }
-                    }
                     BasicTextField(
                         value = item.concept,
                         onValueChange = { viewModel.onItemConcept(item.id, it) },
@@ -152,17 +139,5 @@ fun DetailScreen(
                 onConfirm = viewModel::onConfirmItemAmount,
             )
         }
-    }
-}
-
-@Composable
-private fun CheckMark(c: KuodraColors, checked: Boolean) {
-    Box(
-        Modifier.size(22.dp).clip(Kuodra.shape.sm)
-            .background(if (checked) c.primary else c.surface)
-            .border(1.5.dp, if (checked) c.primary else c.line, Kuodra.shape.sm),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (checked) Text("✓", style = Kuodra.type.caption, color = c.primaryInk, textAlign = TextAlign.Center)
     }
 }
